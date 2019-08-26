@@ -1,0 +1,7 @@
+data/*
+meta/*
+ml-20m/*
+ml-latest-small/*
+
+__pycache__/
+
