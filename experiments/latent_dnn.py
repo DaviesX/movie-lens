@@ -7,27 +7,29 @@ from hparams import USER_EMBEDDINGS_SIZE
 
 def label():
     with tf.name_scope("label"):
-        return tf.placeholder(dtype=tf.float32, 
-                              shape=[None], 
+        return tf.placeholder(dtype=tf.float32,
+                              shape=[None],
                               name="rating")
 
-def movie_id_input():
+def movie_id_one_hot_input(num_movies: int):
     with tf.name_scope("movie_input"):
-        return tf.placeholder(dtype=tf.int32, 
-                              shape=[None], 
-                              name="movie_id")
+        movie_ids = tf.placeholder(dtype=tf.int32,
+                                   shape=[None],
+                                   name="movie_id")
+        return tf.one_hot(indices=movie_ids, depth=num_movies)
 
-def user_id_input():
+def user_id_one_hot_input(num_users: int):
     with tf.name_scope("user_input"):
-        return tf.placeholder(dtype=tf.int32, 
-                              shape=[None], 
-                              name="user_id")
+        user_ids = tf.placeholder(dtype=tf.int32,
+                                  shape=[None],
+                                  name="user_id")
+        return tf.one_hot(indices=user_ids, depth=num_users)
 
 def embeddings_table(name: str,
                      num_vecs: int,
                      latent_size: int):
     with tf.name_scope(name):
-        embed_table = tf.Variable(tf.truncated_normal(shape=[num_vecs, latent_size], 
+        embed_table = tf.Variable(tf.truncated_normal(shape=[num_vecs, latent_size],
                                                       stddev=1.0/m.sqrt(float(latent_size))),
                                   name="embed_table")
         return embed_table
@@ -43,7 +45,7 @@ def nn_dense_layer(name: str,
                               name="w")
         biases = tf.Variable(tf.zeros(shape=[output_size]), name="b")
         lin_t = tf.matmul(a=inputs, b=weights, name="linear_trans")
-        features = tf.add(a=lin_t, b=biases, name="translate")
+        features = tf.add(x=lin_t, y=biases, name="translate")
         if act_func == "relu":
             return tf.nn.relu(features=features, name="layer_output")
         else:
@@ -70,10 +72,10 @@ class latent_dnn:
                  movie_embed_size: int,
                  embedding_transform: bool,
                  reset_and_train: bool,
-                 num_iters: int=100000, 
-                 batch_size: int=500,
-                 learning_rate: float=0.0001):
-        """Construct latent spaces for both user and movie by using rating 
+                 num_iters=10000, 
+                 batch_size=200,
+                 learning_rate=0.0001):
+        """Construct latent spaces for both user and movie by using rating
         prediction as the training task.
 
         Arguments:
@@ -129,18 +131,18 @@ class latent_dnn:
                     learning_rate: float):
         """Build an NN graph.
         """
-        user_ids = user_id_input()
-        movie_ids = movie_id_input()
+        user_ids = user_id_one_hot_input(num_users=num_users)
+        movie_ids = movie_id_one_hot_input(num_movies=num_movies)
 
-        user_embed_table = embeddings_table(name="user_embed", 
-                                            num_vecs=num_users, 
+        user_embed_table = embeddings_table(name="user_embed",
+                                            num_vecs=num_users,
                                             latent_size=user_embed_size)
-        movie_embed_table = embeddings_table(name="movie_embed", 
-                                             num_vecs=num_movies, 
+        movie_embed_table = embeddings_table(name="movie_embed",
+                                             num_vecs=num_movies,
                                              latent_size=movie_embed_size)
 
-        user_embeddings = user_embed_table[user_ids]
-        movie_embeddings = movie_embed_table[movie_ids]
+        user_embeddings = tf.matmul(a=user_ids, b=user_embed_table)
+        movie_embeddings = tf.matmul(a=movie_ids, b=movie_embed_table)
 
         if embedding_transform:
             user_embeddings = nn_dense_layer(name="user_embed_transform",
@@ -156,8 +158,8 @@ class latent_dnn:
 
         concat_features = tf.concat(values=[user_embeddings, movie_embeddings],
                                     axis=1, name="concat_features")
-        compress_size: int = (self.USER_EMBEDDINGS_TRANSFORMED_SIZE + \
-                              self.MOVIE_EMBEDDINGS_TRANSFORMED_SIZE)//2
+        compress_size = (self.USER_EMBEDDINGS_TRANSFORMED_SIZE + \
+                         self.MOVIE_EMBEDDINGS_TRANSFORMED_SIZE)//2
         compress = nn_dense_layer(name="compress",
                                   inputs=concat_features,
                                   input_size=user_embed_size + movie_embed_size,
@@ -202,7 +204,7 @@ class latent_dnn:
                 saver.restore(sess, tf.train.latest_checkpoint('./'))
                 graph = tf.get_default_graph()
 
-            user_input_node = graph.get_tensor_by_name("uesr_input/user_id:0")
+            user_input_node = graph.get_tensor_by_name("user_input/user_id:0")
             movie_input_node = graph.get_tensor_by_name("movie_input/movie_id:0")
             rating_node = graph.get_tensor_by_name("label/rating:0")
             optimizer_node = graph.get_operation_by_name("optimizer_node")
@@ -213,8 +215,8 @@ class latent_dnn:
             for i in range(self.num_iters_):
                 batch_idx = np.random.randint(low=0, high=dataset_size,
                                               size=self.batch_size_)
-                batch_user_ids = user_ids[batch_idx, :]
-                batch_movie_ids = movie_ids[batch_idx, :]
+                batch_user_ids = user_ids[batch_idx]
+                batch_movie_ids = movie_ids[batch_idx]
                 batch_rating = rating[batch_idx]
 
                 optimizer_node.run(feed_dict={
@@ -235,20 +237,20 @@ class latent_dnn:
             saver.save(sess=sess, save_path=self.model_meta_path_)
             print("Saved model parameters.")
 
-    def predict(self, 
+    def predict(self,
                 user_ids: np.ndarray, 
                 movie_ids: np.ndarray) -> np.ndarray:
         """Make rating prediction on user-movie pair.
 
         Arguments:
-            user_ids {np.ndarray} -- A list of user ids pairing up with the 
+            user_ids {np.ndarray} -- A list of user ids pairing up with the
                 movie_ids.
-            movie_ids {np.ndarray} -- A list of movie ids pairing up with the 
+            movie_ids {np.ndarray} -- A list of movie ids pairing up with the
                 user_ids.
         Note:
             predict() assumes that user_embed.shape[0] == movie_embed.shape[0]
         Returns:
-            np.ndarray -- a float array consists N ratings prediction 
+            np.ndarray -- a float array consists N ratings prediction
                 over the user-movie pairs.
         """
         with tf.Session() as sess:
@@ -273,4 +275,27 @@ class latent_dnn:
 if __name__ == "__main__":
     """Find latent space for both users and movies.
     """
-    pass
+    dataset_train = np.load(file="../data/rated_embeddings_train.npy")
+    user_ids = dataset_train[:, 0].astype(dtype=np.int32) - 1
+    movie_ids = dataset_train[:, 1].astype(dtype=np.int32) - 1
+    rating_train = dataset_train[:, -1]
+
+    num_users = np.max(user_ids) + 1
+    num_movies = np.max(movie_ids) + 1
+
+    model = latent_dnn(model_meta_path="../meta/latent_dnn_transformed.ckpt",
+                       model_check_point_dir="../meta",
+                       num_users=num_users,
+                       user_embed_size=USER_EMBEDDINGS_SIZE,
+                       num_movies=num_movies,
+                       movie_embed_size=MOVIE_EMBEDDINGS_SIZE,
+                       embedding_transform=True,
+                       reset_and_train=True)
+    model.fit(user_ids=user_ids,
+              movie_ids=movie_ids,
+              rating=rating_train)
+
+    pred_ratings_train = model.predict(user_ids=user_ids,
+                                       movie_ids=movie_ids)
+
+    np.save(file="../data/rating_pred_train_nn.npy", arr=pred_ratings_train)
