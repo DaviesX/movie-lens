@@ -4,10 +4,10 @@ from sklearn.decomposition import TruncatedSVD
 
 from hparams import MOVIE_EMBEDDINGS_SIZE
 
-def movie_embeddings_trunc_svd(um: np.ndarray, 
-                               embedding_size: int, 
-                               model_meta_path: str,
-                               is_train: bool) -> np.ndarray:
+def movie_latent_trunc_svd(um: np.ndarray, 
+                           embedding_size: int, 
+                           model_meta_path: str,
+                           is_train: bool) -> np.ndarray:
     """Compute a low dimensional representation vector for each movie. 
     The representation is obtained by performing a sparse linear PCA (i.e. truncated SVD).
     
@@ -35,13 +35,13 @@ if __name__ == "__main__":
     """Generate movie embeddings for each movie.
     """
     um_train = np.load(file="../data/ratings_small_train.npy")
-    um_embedded_train = movie_embeddings_trunc_svd(um=um_train, embedding_size=MOVIE_EMBEDDINGS_SIZE, \
+    um_embedded_train = movie_latent_trunc_svd(um=um_train, embedding_size=MOVIE_EMBEDDINGS_SIZE, \
         model_meta_path="../meta/embeddings_tsvd_movie_params.dump",
         is_train=True)
     np.save(file="../data/embeddings_movie_train.npy", arr=um_embedded_train)
 
     um_valid = np.load(file="../data/ratings_small_validation.npy")
-    um_embedded_valid = movie_embeddings_trunc_svd(um=um_valid, embedding_size=MOVIE_EMBEDDINGS_SIZE, \
+    um_embedded_valid = movie_latent_trunc_svd(um=um_valid, embedding_size=MOVIE_EMBEDDINGS_SIZE, \
         model_meta_path="../meta/embeddings_tsvd_movie_params.dump",
         is_train=False)
     np.save(file="../data/embeddings_movie_valid.npy", arr=um_embedded_valid)

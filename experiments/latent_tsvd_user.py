@@ -4,10 +4,10 @@ from sklearn.decomposition import TruncatedSVD
 
 from hparams import USER_EMBEDDINGS_SIZE
 
-def user_embeddings_trunc_svd(um: np.ndarray, 
-                              embedding_size: int, 
-                              model_meta_path: str,
-                              is_train: bool) -> np.ndarray:
+def user_latent_trunc_svd(um: np.ndarray, 
+                          embedding_size: int, 
+                          model_meta_path: str,
+                          is_train: bool) -> np.ndarray:
     """Compute a low dimensional representation vector for each user. 
     The representation is obtained by performing a sparse linear PCA (i.e. truncated SVD).
     
@@ -35,13 +35,13 @@ if __name__ == "__main__":
     """Generate user embeddings for each user.
     """
     um_train = np.load(file="../data/ratings_small_train.npy")
-    um_embedded_train = user_embeddings_trunc_svd(um=um_train, embedding_size=USER_EMBEDDINGS_SIZE, \
+    um_embedded_train = user_latent_trunc_svd(um=um_train, embedding_size=USER_EMBEDDINGS_SIZE, \
         model_meta_path="../meta/embeddings_tsvd_users_params.dump",
         is_train=True)
     np.save(file="../data/embeddings_user_train.npy", arr=um_embedded_train)
 
     um_valid = np.load(file="../data/ratings_small_validation.npy")
-    um_embedded_valid = user_embeddings_trunc_svd(um=um_valid, embedding_size=USER_EMBEDDINGS_SIZE, \
+    um_embedded_valid = user_latent_trunc_svd(um=um_valid, embedding_size=USER_EMBEDDINGS_SIZE, \
         model_meta_path="../meta/embeddings_tsvd_users_params.dump",
         is_train=False)
     np.save(file="../data/embeddings_user_valid.npy", arr=um_embedded_valid)
