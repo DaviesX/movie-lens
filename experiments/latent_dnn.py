@@ -72,7 +72,7 @@ class latent_dnn:
                  movie_embed_size: int,
                  embedding_transform: bool,
                  reset_and_train: bool,
-                 num_iters=10000, 
+                 num_iters=10000,
                  batch_size=200,
                  learning_rate=0.0001):
         """Construct latent spaces for both user and movie by using rating
@@ -177,7 +177,8 @@ class latent_dnn:
             user_ids: np.ndarray, 
             movie_ids: np.ndarray, 
             rating: np.ndarray) -> None:
-        """Fit the NN model to the user-movie embedding pairs and ratings.
+        """Fit the NN model to construct latent spaces for both user and movie
+        by using rating prediction as the training task.
 
         Arguments:
             user_ids {np.ndarray} -- A list of user ids pairing up with the
