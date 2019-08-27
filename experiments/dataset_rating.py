@@ -14,8 +14,8 @@ def load_user_movie_rating(file_name: str) -> np.ndarray:
             of users and M is the total number of movies. 
     """
     rating_dataset = pd.read_csv(filepath_or_buffer=file_name, sep=",")
-    user_to_movie_inds = rating_dataset[["userId", "movieId"]].to_numpy()
-    ratings = rating_dataset["rating"].to_numpy()
+    user_to_movie_inds = rating_dataset[["userId", "movieId"]].values
+    ratings = rating_dataset["rating"].values
 
     num_users = np.max(user_to_movie_inds[:,0])
     num_movies = np.max(user_to_movie_inds[:,1])
@@ -30,5 +30,5 @@ def load_user_movie_rating(file_name: str) -> np.ndarray:
 if __name__ == "__main__":
     """Generate raw rating datasets.
     """
-    um = load_user_movie_rating(file_name="../ml-latest-small/ratings.csv")
+    um = load_user_movie_rating(file_name="../movie-lens-small-latest-dataset/ratings.csv")
     np.save(file="../data/raw_ratings_small.npy", arr=um)
