@@ -2,8 +2,8 @@
 
 """ The size of the latent space representing movies.
 """
-MOVIE_EMBEDDINGS_SIZE = 30
+MOVIE_EMBEDDINGS_SIZE = 10
 
 """The size of the latent space representing users.
 """
-USER_EMBEDDINGS_SIZE = 30
+USER_EMBEDDINGS_SIZE = 10

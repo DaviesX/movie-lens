@@ -7,20 +7,20 @@ import math as m
 from hparams import MOVIE_EMBEDDINGS_SIZE
 from hparams import USER_EMBEDDINGS_SIZE
 
-def label():
+def label() -> tf.Tensor:
     with tf.name_scope("label"):
         return tf.placeholder(dtype=tf.float32,
                               shape=[None],
                               name="rating")
 
-def movie_id_one_hot_input(num_movies: int):
+def movie_id_one_hot_input(num_movies: int) -> tf.Tensor:
     with tf.name_scope("movie_input"):
         movie_ids = tf.placeholder(dtype=tf.int32,
                                    shape=[None],
                                    name="movie_id")
         return tf.one_hot(indices=movie_ids, depth=num_movies, name="to_one_hot")
 
-def user_id_one_hot_input(num_users: int):
+def user_id_one_hot_input(num_users: int) -> tf.Tensor:
     with tf.name_scope("user_input"):
         user_ids = tf.placeholder(dtype=tf.int32,
                                   shape=[None],
@@ -29,43 +29,56 @@ def user_id_one_hot_input(num_users: int):
 
 def embeddings_table(name: str,
                      num_vecs: int,
-                     latent_size: int):
+                     latent_size: int,
+                     vars: list) -> tf.Tensor:
     with tf.name_scope(name):
         embed_table = tf.Variable(tf.truncated_normal(shape=[num_vecs, latent_size],
                                                       stddev=1.0/m.sqrt(float(latent_size))),
                                   name="embed_table")
+        vars.append(embed_table)
         return embed_table
 
 def nn_dense_layer(name: str,
-                   inputs: tf.NodeDef,
+                   inputs: tf.Tensor,
                    input_size: int,
                    output_size: int,
-                   act_func="relu"):
+                   act_func,
+                   vars: list) -> tf.Tensor:
     with tf.name_scope(name):
         weights = tf.Variable(tf.truncated_normal(shape=[input_size, output_size],
                                                   stddev=1.0/m.sqrt(float(input_size))),
                               name="weights")
         biases = tf.Variable(tf.zeros(shape=[output_size]), name="biases")
+
+        vars.append(weights)
+        vars.append(biases)
+
         lin_t = tf.matmul(a=inputs, b=weights, name="linear_trans")
         features = tf.add(x=lin_t, y=biases, name="translate")
         if act_func == "relu":
             return tf.nn.relu(features=features, name="layer_output")
-        else:
+        elif act_func == "tanh":
             return tf.tanh(x=features, name="layer_output")
+        else:
+            raise "Unknown activaion function " + act_func
 
-def prediction(inputs: tf.NodeDef, input_size: int):
+def prediction(inputs: tf.Tensor, input_size: int, vars: list()) -> tf.Tensor:
     preds = nn_dense_layer(name="prediction",
                            inputs=inputs,
                            input_size=input_size,
-                           output_size=1)
-    return tf.reshape(tensor=preds,
-                      shape=[tf.shape(input=preds, name="pred_shape")[0]],
-                      name="rating_preds")
+                           output_size=1,
+                           act_func="tanh",
+                           vars=vars)
+    preds = 2.5*(preds + 1)
+    preds = tf.reshape(tensor=preds,
+                       shape=[tf.shape(input=preds, name="pred_shape")[0]],
+                       name="rating_preds")
+    return preds
 
-def mse_loss(preds: tf.NodeDef, labels: tf.NodeDef):
-    with tf.name_scope("loss"):
+def rating_loss(preds: tf.Tensor, labels: tf.Tensor) -> tf.Tensor:
+    with tf.name_scope("rating_loss"):
         loss = tf.losses.mean_squared_error(labels, preds)
-        return tf.identity(input=loss, name="mse_loss")
+        return tf.identity(input=loss, name="mse")
 
 class latent_dnn:
     def __init__(self,
@@ -127,34 +140,48 @@ class latent_dnn:
                     learning_rate: float):
         """Build an NN graph.
         """
+        embeddings_vars = list()
+        rating_pred_vars = list()
+
         user_ids = user_id_one_hot_input(num_users=num_users)
         movie_ids = movie_id_one_hot_input(num_movies=num_movies)
 
         user_embed_table = embeddings_table(name="user_embed",
                                             num_vecs=num_users,
-                                            latent_size=user_embed_size)
+                                            latent_size=user_embed_size,
+                                            vars=embeddings_vars)
         movie_embed_table = embeddings_table(name="movie_embed",
                                              num_vecs=num_movies,
-                                             latent_size=movie_embed_size)
+                                             latent_size=movie_embed_size,
+                                             vars=embeddings_vars)
 
         user_embeddings = tf.matmul(a=user_ids, b=user_embed_table, name="pick_up_user_embed")
         movie_embeddings = tf.matmul(a=movie_ids, b=movie_embed_table, name="pick_up_movie_embed")
 
         concat_features = tf.concat(values=[user_embeddings, movie_embeddings],
                                     axis=1, name="concat_features")
-        compress_size = (user_embed_size + movie_embed_size)//2
-        compress = nn_dense_layer(name="compress",
-                                  inputs=concat_features,
+        # compress_size = (user_embed_size + movie_embed_size)//2
+        # compress = nn_dense_layer(name="compress",
+        #                           inputs=concat_features,
+        #                           input_size=user_embed_size + movie_embed_size,
+        #                           output_size=compress_size,
+        #                           act_func="tanh",
+        #                           vars=rating_pred_vars)
+        # rating_preds = prediction(inputs=compress,
+        #                           input_size=compress_size,
+        #                           vars=rating_pred_vars)
+
+        rating_preds = prediction(inputs=concat_features,
                                   input_size=user_embed_size + movie_embed_size,
-                                  output_size=compress_size)
-        rating_preds = prediction(inputs=compress, input_size=compress_size)
+                                  vars=rating_pred_vars)
 
         rating_label = label()
-        loss = mse_loss(rating_preds, rating_label)
+        loss = rating_loss(rating_preds, rating_label)
+        loss = tf.identity(input=loss, name="total_loss")
 
         optimizer = tf.train.AdamOptimizer(learning_rate)
-        global_step = tf.Variable(0, name="global_step", trainable=False)
-        optimizer.minimize(loss, global_step=global_step, name="optimizer_node")
+        optimizer.minimize(loss=loss, var_list=embeddings_vars, name="embeddings_task")
+        optimizer.minimize(loss=loss, var_list=rating_pred_vars, name="rating_pred_task")
 
     def fit(self, 
             user_ids: np.ndarray, 
@@ -189,11 +216,17 @@ class latent_dnn:
             user_input_node = graph.get_tensor_by_name("user_input/user_id:0")
             movie_input_node = graph.get_tensor_by_name("movie_input/movie_id:0")
             rating_node = graph.get_tensor_by_name("label/rating:0")
-            optimizer_node = graph.get_operation_by_name("optimizer_node")
-            loss_node = graph.get_tensor_by_name("loss/mse_loss:0")
+
+            embeddings_task = graph.get_operation_by_name("embeddings_task")
+            rating_pred_task = graph.get_operation_by_name("rating_pred_task")
+
+            rating_loss_node = graph.get_tensor_by_name("rating_loss/mse:0")
+            total_loss_node = graph.get_tensor_by_name("total_loss:0")
 
             dataset_size = user_ids.shape[0]
 
+            curr_task = "embeddings"
+            num_iters_for_curr_task = 0
             for i in range(self.num_iters_):
                 batch_idx = np.random.randint(low=0, high=dataset_size,
                                               size=self.batch_size_)
@@ -201,19 +234,38 @@ class latent_dnn:
                 batch_movie_ids = movie_ids[batch_idx]
                 batch_rating = rating[batch_idx]
 
-                optimizer_node.run(feed_dict={
-                    user_input_node: batch_user_ids,
-                    movie_input_node: batch_movie_ids,
-                    rating_node: batch_rating,
-                })
+                if num_iters_for_curr_task > 1000 and curr_task == "embeddings":
+                    curr_task = "rating_pred"
+                    num_iters_for_curr_task = 0
+                if num_iters_for_curr_task > 100 and curr_task == "rating_pred":
+                    curr_task = "embeddings"
+                    num_iters_for_curr_task = 0
 
-                if i % 100 == 0:
-                    loss_val = loss_node.eval(feed_dict={
+                if curr_task == "embeddings":
+                    embeddings_task.run(feed_dict={
                         user_input_node: batch_user_ids,
                         movie_input_node: batch_movie_ids,
                         rating_node: batch_rating,
                     })
-                    print("Loss at ", i, "=", loss_val)
+                elif curr_task == "rating_pred":
+                    rating_pred_task.run(feed_dict={
+                        user_input_node: batch_user_ids,
+                        movie_input_node: batch_movie_ids,
+                        rating_node: batch_rating,
+                    })
+                num_iters_for_curr_task += 1
+
+                if i % 100 == 0:
+                    losses = sess.run(fetches=[total_loss_node, rating_loss_node], 
+                                      feed_dict={
+                                        user_input_node: batch_user_ids,
+                                        movie_input_node: batch_movie_ids,
+                                        rating_node: batch_rating,
+                                    })
+                    print("At", i,
+                          "|task=", curr_task,
+                          "|total_loss=", losses[0],
+                          "|rating_loss=", losses[1])
 
             print("Training complete. ")
             saver.save(sess=sess, save_path=self.model_meta_path_)
@@ -299,14 +351,14 @@ if __name__ == "__main__":
                        user_embed_size=USER_EMBEDDINGS_SIZE,
                        num_movies=num_movies,
                        movie_embed_size=MOVIE_EMBEDDINGS_SIZE,
-                       num_iters=10000,
+                       num_iters=20000,
                        reset_and_train=True)
-    # model.fit(user_ids=user_ids,
-    #           movie_ids=movie_ids,
-    #           rating=rating_train)
+    model.fit(user_ids=user_ids,
+              movie_ids=movie_ids,
+              rating=rating_train)
 
     user_embed, movie_embed = model.export_embeddings()
-    
+
     np.save(file="../data/embeddings_user_train.npy", arr=user_embed)
     np.save(file="../data/embeddings_user_valid.npy", arr=user_embed)
 
