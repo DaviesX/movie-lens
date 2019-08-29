@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, List
 
 import numpy as np
 import tensorflow as tf
@@ -43,7 +43,7 @@ def nn_dense_layer(name: str,
                    input_size: int,
                    output_size: int,
                    act_func,
-                   vars: list) -> tf.Tensor:
+                   vars: List[tf.Tensor]) -> tf.Tensor:
     with tf.name_scope(name):
         weights = tf.Variable(tf.truncated_normal(shape=[input_size, output_size],
                                                   stddev=1.0/m.sqrt(float(input_size))),
@@ -62,7 +62,9 @@ def nn_dense_layer(name: str,
         else:
             raise "Unknown activaion function " + act_func
 
-def prediction(inputs: tf.Tensor, input_size: int, vars: list()) -> tf.Tensor:
+def prediction(inputs: tf.Tensor,
+               input_size: int,
+               vars: List[tf.Tensor]) -> tf.Tensor:
     preds = nn_dense_layer(name="prediction",
                            inputs=inputs,
                            input_size=input_size,
@@ -75,10 +77,25 @@ def prediction(inputs: tf.Tensor, input_size: int, vars: list()) -> tf.Tensor:
                        name="rating_preds")
     return preds
 
-def rating_loss(preds: tf.Tensor, labels: tf.Tensor) -> tf.Tensor:
-    with tf.name_scope("rating_loss"):
+def rating_pred_loss(preds: tf.Tensor, labels: tf.Tensor) -> tf.Tensor:
+    with tf.name_scope("rating_pred_loss"):
         loss = tf.losses.mean_squared_error(labels, preds)
         return tf.identity(input=loss, name="mse")
+
+def rating_regularizer(weights: tf.Tensor) -> tf.Tensor:
+    with tf.name_scope("rating_regularizer"):
+        loss = tf.reduce_mean(input_tensor=weights*weights,
+                              name="weights_norm")
+        return loss
+
+def embeddings_unit_norm_loss(name: str, embeddings: tf.Tensor) -> tf.Tensor:
+    with tf.name_scope(name):
+        norm = tf.sqrt(x=tf.reduce_sum(input_tensor=embeddings*embeddings,
+                                       axis=1),
+                       name="embedding_norm")
+        len_diffs = 1.0 - norm
+        errs = len_diffs*len_diffs
+        return tf.reduce_mean(input_tensor=errs, name="err")
 
 class latent_dnn:
     def __init__(self,
@@ -114,7 +131,7 @@ class latent_dnn:
                 is going to perform (default: {20000})
             batch_size {int} -- How many training examples are going to
                 feed for each weights update. (default: {100})
-            learning_rate {float} -- The velocity of each gradient descent 
+            learning_rate {float} -- The velocity of each gradient descent
                 step. (default: {0.001})
         """
         # Configurable hyper-params
@@ -132,7 +149,7 @@ class latent_dnn:
                          movie_embed_size=movie_embed_size,
                          learning_rate=learning_rate)
 
-    def build_graph(self, 
+    def build_graph(self,
                     num_users: int,
                     user_embed_size: int,
                     num_movies: int,
@@ -176,16 +193,28 @@ class latent_dnn:
                                   vars=rating_pred_vars)
 
         rating_label = label()
-        loss = rating_loss(rating_preds, rating_label)
-        loss = tf.identity(input=loss, name="total_loss")
+        rating_loss = tf.identity(input=rating_pred_loss(preds=rating_preds,
+                                                         labels=rating_label) + \
+                                        rating_regularizer(weights=rating_pred_vars[0]),
+                                  name="rating_loss")
+        embeddings_loss = tf.identity(input=rating_loss + \
+                                      embeddings_unit_norm_loss(embeddings=user_embeddings,
+                                                                name="user_embed_norm_loss") + \
+                                      embeddings_unit_norm_loss(embeddings=movie_embeddings,
+                                                                name="movie_embed_norm_loss"),
+                                      name="embeddings_loss")
 
         optimizer = tf.train.AdamOptimizer(learning_rate)
-        optimizer.minimize(loss=loss, var_list=embeddings_vars, name="embeddings_task")
-        optimizer.minimize(loss=loss, var_list=rating_pred_vars, name="rating_pred_task")
+        optimizer.minimize(loss=embeddings_loss,
+                           var_list=embeddings_vars,
+                           name="embeddings_task")
+        optimizer.minimize(loss=rating_loss,
+                           var_list=rating_pred_vars,
+                           name="rating_pred_task")
 
     def fit(self, 
-            user_ids: np.ndarray, 
-            movie_ids: np.ndarray, 
+            user_ids: np.ndarray,
+            movie_ids: np.ndarray,
             rating: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """Fit the NN model to construct latent spaces for both user and movie
         by using rating prediction as the training task.
@@ -220,8 +249,8 @@ class latent_dnn:
             embeddings_task = graph.get_operation_by_name("embeddings_task")
             rating_pred_task = graph.get_operation_by_name("rating_pred_task")
 
-            rating_loss_node = graph.get_tensor_by_name("rating_loss/mse:0")
-            total_loss_node = graph.get_tensor_by_name("total_loss:0")
+            rating_loss_node = graph.get_tensor_by_name("rating_loss:0")
+            embeddings_loss_node = graph.get_tensor_by_name("embeddings_loss:0")
 
             dataset_size = user_ids.shape[0]
 
@@ -256,15 +285,16 @@ class latent_dnn:
                 num_iters_for_curr_task += 1
 
                 if i % 100 == 0:
-                    losses = sess.run(fetches=[total_loss_node, rating_loss_node], 
+                    losses = sess.run(fetches=[embeddings_loss_node, 
+                                               rating_loss_node],
                                       feed_dict={
-                                        user_input_node: batch_user_ids,
-                                        movie_input_node: batch_movie_ids,
-                                        rating_node: batch_rating,
-                                    })
+                                          user_input_node: batch_user_ids,
+                                          movie_input_node: batch_movie_ids,
+                                          rating_node: batch_rating,
+                                      })
                     print("At", i,
                           "|task=", curr_task,
-                          "|total_loss=", losses[0],
+                          "|embeddings_loss=", losses[0],
                           "|rating_loss=", losses[1])
 
             print("Training complete. ")
