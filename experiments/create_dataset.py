@@ -1,7 +1,19 @@
 from typing import Tuple
+import random as rnd
 import numpy as np
 from scipy.sparse import coo_matrix
 import pandas as pd
+
+def load_sparse_matrix(file: str) -> coo_matrix:
+    with np.load(file) as loader:
+        mat = coo_matrix((loader["data"], (loader["row"], loader["col"])), 
+                         shape=loader["shape"])
+        return mat
+
+def save_sparse_matrix(file: str, mat: coo_matrix) -> None:
+    np.savez_compressed(file=file,
+                        data=mat.data, row=mat.row, col=mat.col,
+                        shape=mat.shape)
 
 def load_user_movie_rating(file_name: str) -> Tuple[coo_matrix, np.ndarray, np.ndarray]:
     """Load a CSV rating dataset into a numpy user-movie rating table.
@@ -36,17 +48,6 @@ def load_user_movie_rating(file_name: str) -> Tuple[coo_matrix, np.ndarray, np.n
 
     return um, row2uid, col2mid
 
-def save_sparse_matrix(file: str, mat: coo_matrix) -> None:
-    np.savez_compressed(file=file,
-                        data=mat.data, row=mat.row, col=mat.col,
-                        shape=mat.shape)
-
-def load_sparse_matrix(file: str) -> coo_matrix:
-    with np.load(file) as loader:
-        mat = coo_matrix((loader["data"], (loader["row"], loader["col"])), 
-                         shape=loader["shape"])
-        return mat
-
 def truncate_unrated_movies(um: coo_matrix,
                             row2uid: np.ndarray,
                             col2mid: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -71,10 +72,62 @@ def truncate_unrated_movies(um: coo_matrix,
            row2uid, \
            col2mid[movie_with_no_ratings]
 
+def train_and_validation_split(um: coo_matrix,
+                               row2uid: np.ndarray,
+                               col2mid: np.ndarray,
+                               p_train: float) -> \
+    Tuple[coo_matrix, coo_matrix, np.ndarray, np.ndarray]:
+    """Randomly split the U*M ratings table into training and hold-out sets.
+    hold-out entry selection is done by randomly mask out movie-user pairs.
+
+    Arguments:
+        um {coo_matrix} -- U*M rating table where U is the number of users
+            whereas M is the number of movies.
+        row2uid {np.ndarray} -- mapping from row index to USER_ID.
+        col2mid {np.ndarray} -- mapping from col index to MOVIE_ID.
+        p_train {float} -- Proportion in which the users will be partitioned
+            as the training set.
+
+    Returns:
+        Tuple[coo_matrix, coo_matrix, np.ndarray, np.ndarray] --
+            coo_matrix, coo_matrix: A tuple of (U*M, U*M) training and
+                validation rating tables, respectively.
+            np.ndarray, np.ndarray: mappings from row and col indices to
+                USER_ID and MOVIE_ID.
+    """
+    # First shuffle entries in the user-movie matrix table
+    num_users = um.shape[0]
+    num_movies = um.shape[1]
+
+    user_inds = np.arange(start=0, stop=num_users)
+    movie_inds = np.arange(start=0, stop=num_movies)
+    rnd.shuffle(x=user_inds)
+    rnd.shuffle(x=movie_inds)
+
+    csr_um = um.tocsr()
+    row_shuffled_um = csr_um[user_inds, :].tocsc()
+    shuffled_um = row_shuffled_um[:, movie_inds].tocoo()
+
+    # Take the first p_train*dataset_size of data out as the training set,
+    # and keep the rest for validation.
+    train_upper_bound = int(round(p_train*shuffled_um.data.shape[0]))
+    um_train = coo_matrix((shuffled_um.data[:train_upper_bound],
+                           (shuffled_um.row[:train_upper_bound],
+                            shuffled_um.col[:train_upper_bound])),
+                           shape=shuffled_um.shape)
+    um_valid = coo_matrix((shuffled_um.data[train_upper_bound:],
+                           (shuffled_um.row[train_upper_bound:],
+                            shuffled_um.col[train_upper_bound:])),
+                           shape=shuffled_um.shape)
+    return um_train, um_valid, row2uid[user_inds], col2mid[movie_inds]
+
 if __name__ == "__main__":
     """Generate raw rating datasets.
     """
     um, row2uid, col2mid = load_user_movie_rating( \
         file_name="../movie-lens-small-latest-dataset/ratings.csv")
     um, row2uid, col2mid = truncate_unrated_movies(um=um, row2uid=row2uid, col2mid=col2mid)
-    # save_sparse_matrix(file="../data/raw_ratings_small.npz", mat=um)
+    um_train, um_valid, row2uid, col2mid = \
+        train_and_validation_split(um=um, row2uid=row2uid, col2mid=col2mid, p_train=0.8)
+    save_sparse_matrix(file="../data/raw_ratings_train.npz", mat=um_train)
+    save_sparse_matrix(file="../data/raw_ratings_valid.npz", mat=um_valid)
