@@ -31,7 +31,7 @@ def main(training_mode: bool):
         embedding_size=MOVIE_EMBEDDINGS_SIZE,
         model_meta_path="../meta/latent_tsvd_movie_params.pkl",
         is_train=True)
-    dataset.save_dense_array(file="../data/latent_tsvd_movie_train.npz", 
+    dataset.save_dense_array(file="../data/latent_tsvd_movie_train.npz",
                              arr=movie_embed_train)
 
     movie_embed_valid = ltsvd.movie_latent_trunc_svd( \

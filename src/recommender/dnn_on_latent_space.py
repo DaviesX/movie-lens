@@ -44,12 +44,12 @@ class dnn_on_latent_space:
                  movie_embed_size: int,
                  embedding_transform: bool,
                  reset_and_train: bool,
-                 num_iters: int=100000,
-                 batch_size: int=100,
-                 learning_rate: float=0.0001):
+                 num_iters=200000,
+                 batch_size=100,
+                 learning_rate=0.0001):
         """Construct a deep neural network recommender model that uses a
         latent space representation inputs of users and movies.
-        
+
         Arguments:
             model_meta_path {str} -- Location where the model parameters
                 are stored/going to be stored.
@@ -59,7 +59,7 @@ class dnn_on_latent_space:
                 before feature compression.
             reset_and_train {bool} -- Whether to reset model parameters or
                 load them from checkpoint files.
-        
+
         Keyword Arguments:
             num_iters {int} -- The maximum number of iterations over batches 
                 is going to perform (default: {20000})
@@ -111,7 +111,7 @@ class dnn_on_latent_space:
 
         concat_features = tf.concat(values=[user_embeddings, movie_embeddings],
                                     axis=1, name="concat_features")
-        compress_size: int = (self.USER_EMBEDDINGS_TRANSFORMED_SIZE + self.MOVIE_EMBEDDINGS_TRANSFORMED_SIZE)//2
+        compress_size: int = (user_embed_size + movie_embed_size)//2
         compress = nn_dense_layer(name="compress",
                                   input=concat_features,
                                   input_size=user_embed_size + movie_embed_size,
