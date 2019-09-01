@@ -61,12 +61,12 @@ class dnn_on_latent_space:
                 load them from checkpoint files.
 
         Keyword Arguments:
-            num_iters {int} -- The maximum number of iterations over batches 
+            num_iters {int} -- The maximum number of iterations over batches
                 is going to perform (default: {20000})
             batch_size {int} -- How many training examples are going to
                 feed for each weights update. (default: {100})
-            learning_rate {float} -- The velocity of each 
-                gradient descent step. (default: {0.001})
+            learning_rate {float} -- The velocity of each gradient descent step.
+                (default: {0.001})
         """
         # Constant hyper-params.
         self.MOVIE_EMBEDDINGS_TRANSFORMED_SIZE = 10
