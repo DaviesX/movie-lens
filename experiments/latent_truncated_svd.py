@@ -5,7 +5,7 @@ from sklearn.decomposition import TruncatedSVD
 
 from hparams import MOVIE_EMBEDDINGS_SIZE
 from hparams import USER_EMBEDDINGS_SIZE
-from create_dataset import load_sparse_matrix
+from dataset import load_sparse_matrix
 
 def movie_latent_trunc_svd(um: coo_matrix,
                            embedding_size: int,
