@@ -6,13 +6,15 @@ from hparams import MOVIE_EMBEDDINGS_SIZE
 from hparams import USER_EMBEDDINGS_SIZE
 
 def main(training_mode: bool):
+    np.random.seed(1331)
+
     # Generate raw rating datasets.
     um, row2uid, col2mid = dataset.load_user_movie_rating( \
         file_name="../movie-lens-small-latest-dataset/ratings.csv")
     um, row2uid, col2mid = dataset.truncate_unrated_movies( \
         um=um, row2uid=row2uid, col2mid=col2mid)
-    um_train, um_valid, row2uid, col2mid = dataset.train_and_validation_split( \
-            um=um, row2uid=row2uid, col2mid=col2mid, p_train=0.8)
+    um_train, um_valid= dataset.train_and_validation_split( \
+            um=um, p_train=0.7)
     dataset.save_sparse_matrix(file="../data/raw_ratings_train.npz", mat=um_train)
     dataset.save_sparse_matrix(file="../data/raw_ratings_valid.npz", mat=um_valid)
 
@@ -35,7 +37,7 @@ def main(training_mode: bool):
         embedding_size=MOVIE_EMBEDDINGS_SIZE,
         model_meta_path="../meta/latent_tsvd_movie_params.pkl",
         is_train=False)
-    dataset.save_dense_array(file="../data/latent_tsvd_movie_valid.npz", 
+    dataset.save_dense_array(file="../data/latent_tsvd_movie_valid.npz",
                              arr=movie_embed_valid)
 
     # Construct latent space for users.
@@ -44,7 +46,7 @@ def main(training_mode: bool):
         embedding_size=USER_EMBEDDINGS_SIZE,
         model_meta_path="../meta/latent_tsvd_user_params.pkl",
         is_train=True)
-    dataset.save_dense_array(file="../data/latent_tsvd_user_train.npz", 
+    dataset.save_dense_array(file="../data/latent_tsvd_user_train.npz",
                              arr=user_embed_train)
 
     user_embed_valid = ltsvd.user_latent_trunc_svd( \

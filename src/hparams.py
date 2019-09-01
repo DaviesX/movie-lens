@@ -6,4 +6,4 @@ MOVIE_EMBEDDINGS_SIZE = 10
 
 """The size of the latent space representing users.
 """
-USER_EMBEDDINGS_SIZE = 10
+USER_EMBEDDINGS_SIZE = 20
