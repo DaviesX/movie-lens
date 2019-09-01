@@ -27,15 +27,16 @@ def main(training_mode: bool):
         embedding_size=MOVIE_EMBEDDINGS_SIZE,
         model_meta_path="../meta/latent_tsvd_movie_params.pkl",
         is_train=True)
-    np.savez_compressed(file="../data/latent_tsvd_movie_train.npz", 
-                        arr=movie_embed_train)
+    dataset.save_dense_array(file="../data/latent_tsvd_movie_train.npz", 
+                             arr=movie_embed_train)
 
     movie_embed_valid = ltsvd.movie_latent_trunc_svd( \
         um=um_valid,
         embedding_size=MOVIE_EMBEDDINGS_SIZE,
         model_meta_path="../meta/latent_tsvd_movie_params.pkl",
         is_train=False)
-    np.savez_compressed(file="../data/latent_tsvd_movie_valid.npz", arr=movie_embed_valid)
+    dataset.save_dense_array(file="../data/latent_tsvd_movie_valid.npz", 
+                             arr=movie_embed_valid)
 
     # Construct latent space for users.
     user_embed_train = ltsvd.user_latent_trunc_svd( \
@@ -43,14 +44,16 @@ def main(training_mode: bool):
         embedding_size=USER_EMBEDDINGS_SIZE,
         model_meta_path="../meta/latent_tsvd_user_params.pkl",
         is_train=True)
-    np.savez_compressed(file="../data/latent_tsvd_user_train.npz", arr=user_embed_train)
+    dataset.save_dense_array(file="../data/latent_tsvd_user_train.npz", 
+                             arr=user_embed_train)
 
     user_embed_valid = ltsvd.user_latent_trunc_svd( \
         um=um_valid,
         embedding_size=USER_EMBEDDINGS_SIZE,
         model_meta_path="../meta/latent_tsvd_user_params.pkl",
         is_train=False)
-    np.savez_compressed(file="../data/latent_tsvd_user_valid.npz", arr=user_embed_valid)
+    dataset.save_dense_array(file="../data/latent_tsvd_user_valid.npz",
+                             arr=user_embed_valid)
 
 if __name__ == "__main__":
     main(training_mode=True)

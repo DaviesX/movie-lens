@@ -15,6 +15,13 @@ def save_sparse_matrix(file: str, mat: coo_matrix) -> None:
                         data=mat.data, row=mat.row, col=mat.col,
                         shape=mat.shape)
 
+def load_dense_array(file: str) -> np.ndarray:
+    with np.load(file) as loader:
+        return loader["arr"]
+
+def save_dense_array(file: str, arr: np.ndarray) -> None:
+    np.savez_compressed(file=file, arr=arr)
+
 def load_user_movie_rating(file_name: str) -> Tuple[coo_matrix, np.ndarray, np.ndarray]:
     """Load a CSV rating dataset into a numpy user-movie rating table.
     Users and movies are ordered by USER_ID and MOVIE_ID, respectively.
