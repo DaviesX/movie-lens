@@ -121,13 +121,3 @@ def train_and_validation_split(um: coo_matrix,
                            shape=shuffled_um.shape)
     return um_train, um_valid, row2uid[user_inds], col2mid[movie_inds]
 
-if __name__ == "__main__":
-    """Generate raw rating datasets.
-    """
-    um, row2uid, col2mid = load_user_movie_rating( \
-        file_name="../movie-lens-small-latest-dataset/ratings.csv")
-    um, row2uid, col2mid = truncate_unrated_movies(um=um, row2uid=row2uid, col2mid=col2mid)
-    um_train, um_valid, row2uid, col2mid = \
-        train_and_validation_split(um=um, row2uid=row2uid, col2mid=col2mid, p_train=0.8)
-    save_sparse_matrix(file="../data/raw_ratings_train.npz", mat=um_train)
-    save_sparse_matrix(file="../data/raw_ratings_valid.npz", mat=um_valid)
