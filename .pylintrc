@@ -1,2 +1,2 @@
 [MASTER]
-init-hook='import sys; sys.path.append("./experiments")'
+init-hook='import sys; sys.path.append("./src")'

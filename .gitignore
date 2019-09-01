@@ -1,7 +1,4 @@
-data/*
-meta/*
 ml-20m/*
-movie-lens-small-latest-dataset/*
 
 __pycache__/
 
