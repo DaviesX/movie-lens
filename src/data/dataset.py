@@ -80,8 +80,6 @@ def truncate_unrated_movies(um: coo_matrix,
            col2mid[movie_with_no_ratings]
 
 def train_and_validation_split(um: coo_matrix,
-                               row2uid: np.ndarray,
-                               col2mid: np.ndarray,
                                p_train: float) -> \
     Tuple[coo_matrix, coo_matrix, np.ndarray, np.ndarray]:
     """Randomly split the U*M ratings table into training and hold-out sets.
@@ -90,8 +88,6 @@ def train_and_validation_split(um: coo_matrix,
     Arguments:
         um {coo_matrix} -- U*M rating table where U is the number of users
             whereas M is the number of movies.
-        row2uid {np.ndarray} -- mapping from row index to USER_ID.
-        col2mid {np.ndarray} -- mapping from col index to MOVIE_ID.
         p_train {float} -- Proportion in which the users will be partitioned
             as the training set.
 
@@ -99,32 +95,20 @@ def train_and_validation_split(um: coo_matrix,
         Tuple[coo_matrix, coo_matrix, np.ndarray, np.ndarray] --
             coo_matrix, coo_matrix: A tuple of (U*M, U*M) training and
                 validation rating tables, respectively.
-            np.ndarray, np.ndarray: mappings from row and col indices to
-                USER_ID and MOVIE_ID.
     """
-    # First shuffle entries in the user-movie matrix table
-    num_users = um.shape[0]
-    num_movies = um.shape[1]
-
-    user_inds = np.arange(start=0, stop=num_users)
-    movie_inds = np.arange(start=0, stop=num_movies)
-    rnd.shuffle(x=user_inds)
-    rnd.shuffle(x=movie_inds)
-
-    csr_um = um.tocsr()
-    row_shuffled_um = csr_um[user_inds, :].tocsc()
-    shuffled_um = row_shuffled_um[:, movie_inds].tocoo()
+    # First shuffle entries (indices) in the user-movie matrix table
+    inds = np.arange(start=0, stop=um.data.shape[0])
+    rnd.shuffle(x=inds)
 
     # Take the first p_train*dataset_size of data out as the training set,
     # and keep the rest for validation.
-    train_upper_bound = int(round(p_train*shuffled_um.data.shape[0]))
-    um_train = coo_matrix((shuffled_um.data[:train_upper_bound],
-                           (shuffled_um.row[:train_upper_bound],
-                            shuffled_um.col[:train_upper_bound])),
-                           shape=shuffled_um.shape)
-    um_valid = coo_matrix((shuffled_um.data[train_upper_bound:],
-                           (shuffled_um.row[train_upper_bound:],
-                            shuffled_um.col[train_upper_bound:])),
-                           shape=shuffled_um.shape)
-    return um_train, um_valid, row2uid[user_inds], col2mid[movie_inds]
-
+    train_upper_bound = int(round(p_train*um.data.shape[0]))
+    um_train = coo_matrix((um.data[inds[:train_upper_bound]],
+                           (um.row[inds[:train_upper_bound]],
+                            um.col[inds[:train_upper_bound]])),
+                           shape=um.shape)
+    um_valid = coo_matrix((um.data[inds[train_upper_bound:]],
+                           (um.row[inds[train_upper_bound:]],
+                            um.col[inds[train_upper_bound:]])),
+                           shape=um.shape)
+    return um_train, um_valid
