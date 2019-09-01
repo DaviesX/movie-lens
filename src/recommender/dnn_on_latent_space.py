@@ -26,26 +26,26 @@ def nn_dense_layer(name: str, input, input_size: int, output_size: int):
         return tf.nn.relu(tf.matmul(input, weights) + biases, name="layer_output")
 
 def prediction(input, input_size: int):
-    return nn_dense_layer(name="rating_pred", 
-                          input=input, 
-                          input_size=input_size, 
-                          output_size=1)
+    preds = nn_dense_layer(name="pred",
+                          input=input,
+                          input_size=input_size,
+                          output_size=1)[:, 0]
+    return tf.identity(input=preds, name="rating_preds")
 
 def mse_loss(prediction, label):
     with tf.name_scope("loss"):
-        loss = tf.losses.mean_squared_error(label, prediction[:,0])
+        loss = tf.losses.mean_squared_error(label, prediction)
         return tf.identity(input=loss, name="mse_loss")
 
 class dnn_on_latent_space:
     def __init__(self,
                  model_meta_path: str,
-                 model_check_point_dir: str,
                  user_embed_size: int,
                  movie_embed_size: int,
                  embedding_transform: bool,
                  reset_and_train: bool,
                  num_iters: int=100000,
-                 batch_size: int=500,
+                 batch_size: int=100,
                  learning_rate: float=0.0001):
         """Construct a deep neural network recommender model that uses a
         latent space representation inputs of users and movies.
@@ -53,11 +53,9 @@ class dnn_on_latent_space:
         Arguments:
             model_meta_path {str} -- Location where the model parameters
                 are stored/going to be stored.
-            model_check_point_dir {str} -- Location where the model check 
-                point is stored/goging to be stored.
             user_embed_size {int} -- The size of user embeddings vector.
             movie_embed_size {int} -- The size of movie embeddings vector.
-            embedding_transform {bool} -- Whether to transform embeddings 
+            embedding_transform {bool} -- Whether to transform embeddings
                 before feature compression.
             reset_and_train {bool} -- Whether to reset model parameters or
                 load them from checkpoint files.
@@ -78,7 +76,6 @@ class dnn_on_latent_space:
         self.user_embed_size_ = user_embed_size
         self.movie_embed_size_ = movie_embed_size
         self.model_meta_path_ = model_meta_path
-        self.model_check_point_dir_ = model_check_point_dir
         self.reset_and_train_ = reset_and_train
         self.num_iters_ = num_iters
         self.batch_size_ = batch_size
@@ -115,12 +112,12 @@ class dnn_on_latent_space:
         concat_features = tf.concat(values=[user_embeddings, movie_embeddings],
                                     axis=1, name="concat_features")
         compress_size: int = (self.USER_EMBEDDINGS_TRANSFORMED_SIZE + self.MOVIE_EMBEDDINGS_TRANSFORMED_SIZE)//2
-        compress = nn_dense_layer(name="compress", 
-                                  input=concat_features, 
+        compress = nn_dense_layer(name="compress",
+                                  input=concat_features,
                                   input_size=user_embed_size + movie_embed_size,
                                   output_size=compress_size)
         rating_pred = prediction(input=compress, input_size=compress_size)
-        
+
         rating_label = label()
         loss = mse_loss(rating_pred, rating_label)
 
@@ -147,7 +144,7 @@ class dnn_on_latent_space:
         """
         saver = None
         graph: tf.Graph = None
-        
+
         with tf.Session() as sess:
             if self.reset_and_train_:
                 saver = tf.train.Saver()
@@ -205,18 +202,18 @@ class dnn_on_latent_space:
         Note:
             predict() assumes that user_embed.shape[0] == movie_embed.shape[0]
         Returns:
-            np.ndarray -- a float array consists N ratings prediction 
+            np.ndarray -- a float array consists N ratings prediction
                 over the user-movie pairs.
         """
+        saver = tf.train.Saver()
+
         with tf.Session() as sess:
-            saver = tf.train.import_meta_graph(
-                    meta_graph_or_file=self.model_meta_path_ + ".meta")
-            saver.restore(sess, tf.train.latest_checkpoint(self.model_check_point_dir_))
+            saver.restore(sess, self.model_meta_path_)
             graph = tf.get_default_graph()
             
             user_embed_node = graph.get_tensor_by_name("user_embeddings/input:0")
             movie_embed_node = graph.get_tensor_by_name("movie_embeddings/input:0")
-            rating_pred_node = graph.get_tensor_by_name("rating_pred/layer_output:0")
+            rating_pred_node = graph.get_tensor_by_name("rating_preds:0")
 
             rating_pred = rating_pred_node.eval(feed_dict={
                 user_embed_node: user_embed,
@@ -224,35 +221,3 @@ class dnn_on_latent_space:
             })
 
             return rating_pred
-
-
-if __name__ == "__main__":
-    """Train model using the rated embeddings training set.
-    """
-    dataset_train = np.load(file="../data/rated_embeddings_train.npy")
-    user_embed_train = dataset_train[:, 2:2 + USER_EMBEDDINGS_SIZE]
-    movie_embed_train = dataset_train[:, 2 + USER_EMBEDDINGS_SIZE:2 + USER_EMBEDDINGS_SIZE + MOVIE_EMBEDDINGS_SIZE]
-    rating_train = dataset_train[:,-1]
-
-    dataset_valid = np.load(file="../data/rated_embeddings_valid.npy")
-    user_embed_valid = dataset_valid[:, 2:2 + USER_EMBEDDINGS_SIZE]
-    movie_embed_valid = dataset_valid[:, 2 + USER_EMBEDDINGS_SIZE:2 + USER_EMBEDDINGS_SIZE + MOVIE_EMBEDDINGS_SIZE]
-    rating_valid = dataset_valid[:,-1]
-
-    model = dnn_on_latent_space(model_meta_path="../meta/recommender_nn_transformed.ckpt",
-                           model_check_point_dir="../meta",
-                           user_embed_size=USER_EMBEDDINGS_SIZE,
-                           movie_embed_size=MOVIE_EMBEDDINGS_SIZE,
-                           embedding_transform=True,
-                           reset_and_train=True)
-    model.fit(user_embed=user_embed_train,
-              movie_embed=movie_embed_train,
-              rating=rating_train)
-    
-    pred_ratings_train = model.predict(user_embed=user_embed_train,
-                                       movie_embed=movie_embed_train)
-    pred_ratings_valid = model.predict(user_embed=user_embed_valid,
-                                       movie_embed=movie_embed_valid)
-
-    np.save(file="../data/rating_pred_train_nn.npy", arr=pred_ratings_train)
-    np.save(file="../data/rating_pred_valid_nn.npy", arr=pred_ratings_valid)

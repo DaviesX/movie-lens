@@ -1,6 +1,8 @@
 import numpy as np
 from data import dataset
 from latent import latent_truncated_svd as ltsvd
+from recommender import dnn_on_latent_space as dols
+from eval import eval_mse
 
 from hparams import MOVIE_EMBEDDINGS_SIZE
 from hparams import USER_EMBEDDINGS_SIZE
@@ -56,6 +58,31 @@ def main(training_mode: bool):
         is_train=False)
     dataset.save_dense_array(file="../data/latent_tsvd_user_valid.npz",
                              arr=user_embed_valid)
+
+    # Train model using the rated embeddings training set.
+    model = dols.dnn_on_latent_space( \
+        model_meta_path="../meta/dols.ckpt",
+        user_embed_size=USER_EMBEDDINGS_SIZE,
+        movie_embed_size=MOVIE_EMBEDDINGS_SIZE,
+        embedding_transform=False,
+        reset_and_train=True)
+
+    if training_mode:
+        model.fit(user_embed=user_embed_train[um_train.row],
+                  movie_embed=movie_embed_train[um_train.col],
+                  rating=um_train.data)
+
+    pred_ratings_train = model.predict(user_embed=user_embed_train[um_train.row],
+                                       movie_embed=movie_embed_train[um_train.col])
+    pred_ratings_valid = model.predict(user_embed=user_embed_train[um_valid.row],
+                                       movie_embed=movie_embed_train[um_valid.col])
+
+    dataset.save_dense_array(file="../data/dols_preds_train.npz", arr=pred_ratings_train)
+    dataset.save_dense_array(file="../data/dols_preds_valid.npz", arr=pred_ratings_valid)
+
+    # Evaluate by the MSE objective.
+    print("train_mse=", eval_mse.mse(um_train.data, pred_ratings_train))
+    print("valid_mse=", eval_mse.mse(um_valid.data, pred_ratings_valid))
 
 if __name__ == "__main__":
     main(training_mode=True)
