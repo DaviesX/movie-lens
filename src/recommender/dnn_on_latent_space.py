@@ -36,18 +36,19 @@ def mse_loss(prediction, label):
         loss = tf.losses.mean_squared_error(label, prediction[:,0])
         return tf.identity(input=loss, name="mse_loss")
 
-class recommender_nn:
-    def __init__(self, 
+class dnn_on_latent_space:
+    def __init__(self,
                  model_meta_path: str,
                  model_check_point_dir: str,
                  user_embed_size: int,
                  movie_embed_size: int,
                  embedding_transform: bool,
                  reset_and_train: bool,
-                 num_iters: int=100000, 
+                 num_iters: int=100000,
                  batch_size: int=500,
                  learning_rate: float=0.0001):
-        """Construct a NN recommender model.
+        """Construct a deep neural network recommender model that uses a
+        latent space representation inputs of users and movies.
         
         Arguments:
             model_meta_path {str} -- Location where the model parameters
@@ -238,7 +239,7 @@ if __name__ == "__main__":
     movie_embed_valid = dataset_valid[:, 2 + USER_EMBEDDINGS_SIZE:2 + USER_EMBEDDINGS_SIZE + MOVIE_EMBEDDINGS_SIZE]
     rating_valid = dataset_valid[:,-1]
 
-    model = recommender_nn(model_meta_path="../meta/recommender_nn_transformed.ckpt",
+    model = dnn_on_latent_space(model_meta_path="../meta/recommender_nn_transformed.ckpt",
                            model_check_point_dir="../meta",
                            user_embed_size=USER_EMBEDDINGS_SIZE,
                            movie_embed_size=MOVIE_EMBEDDINGS_SIZE,
