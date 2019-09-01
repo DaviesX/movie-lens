@@ -41,4 +41,3 @@ if __name__ == "__main__":
     """
     um = load_user_movie_rating(file_name="../movie-lens-small-latest-dataset/ratings.csv")
     save_sparse_matrix(file="../data/raw_ratings_small.npz", mat=um)
-    um = load_sparse_matrix(file="../data/raw_ratings_small.npz")
