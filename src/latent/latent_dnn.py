@@ -189,6 +189,7 @@ class latent_dnn:
 
         concat_features = tf.concat(values=[user_embeddings, movie_embeddings],
                                     axis=1, name="concat_features")
+        concat_features = tf.nn.dropout(x=concat_features, keep_prob=0.8)
 
         if indirect_cause:
             compress_size = (user_embed_size + movie_embed_size)//2
