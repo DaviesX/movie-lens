@@ -22,8 +22,6 @@ def main(training_mode: bool):
     dataset.save_sparse_matrix(file="../data/raw_ratings_valid.npz", mat=um_valid)
 
     # Compute linear latent space and the corresponding vectors for both
-    # um_train = dataset.load_sparse_matrix(file="../data/raw_ratings_train.npz")
-    # um_valid = dataset.load_sparse_matrix(file="../data/raw_ratings_valid.npz")
     # users and movies.
     # Construct a latent space for movies.
     movie_embed = ltsvd.movie_latent_trunc_svd( \
@@ -67,6 +65,7 @@ def main(training_mode: bool):
                             user_embed_size=USER_EMBEDDINGS_SIZE,
                             num_movies=num_movies,
                             movie_embed_size=MOVIE_EMBEDDINGS_SIZE,
+                            indirect_cause=True,
                             num_iters=100000,
                             reset_and_train=True)
     if training_mode:
@@ -98,7 +97,8 @@ def main(training_mode: bool):
         user_embed_size=USER_EMBEDDINGS_SIZE,
         movie_embed_size=MOVIE_EMBEDDINGS_SIZE,
         embedding_transform=True,
-        reset_and_train=True)
+        reset_and_train=True,
+        num_iters=100000)
 
     if training_mode:
         model.fit(user_embed=user_embed[um_train.row],

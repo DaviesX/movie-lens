@@ -47,7 +47,8 @@ def load_user_movie_rating(file_name: str) -> Tuple[coo_matrix, np.ndarray, np.n
 
     # Create rating table.
     um = coo_matrix((ratings, (user_row, movie_col)),
-                    shape=(num_users, num_movies))
+                    shape=(num_users, num_movies),
+                    dtype=np.float32)
 
     # Create mappings from table row and column indices to user ID and movie ID, respectively.
     row2uid = np.arange(start=1, stop=num_users + 1, dtype=np.int32)

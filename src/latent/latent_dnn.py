@@ -42,14 +42,16 @@ def nn_dense_layer(name: str,
                    inputs: tf.Tensor,
                    input_size: int,
                    output_size: int,
-                   act_func,
-                   vars: List[tf.Tensor]) -> tf.Tensor:
+                   act_func: str,
+                   vars: List[tf.Tensor],
+                   reg_vars: List[tf.Tensor]) -> tf.Tensor:
     with tf.name_scope(name):
         weights = tf.Variable(tf.truncated_normal(shape=[input_size, output_size],
                                                   stddev=1.0/m.sqrt(float(input_size))),
                               name="weights")
         biases = tf.Variable(tf.zeros(shape=[output_size]), name="biases")
 
+        reg_vars.append(weights)
         vars.append(weights)
         vars.append(biases)
 
@@ -64,13 +66,15 @@ def nn_dense_layer(name: str,
 
 def prediction(inputs: tf.Tensor,
                input_size: int,
-               vars: List[tf.Tensor]) -> tf.Tensor:
+               vars: List[tf.Tensor],
+               reg_vars: List[tf.Tensor]) -> tf.Tensor:
     preds = nn_dense_layer(name="prediction",
                            inputs=inputs,
                            input_size=input_size,
                            output_size=1,
                            act_func="tanh",
-                           vars=vars)
+                           vars=vars,
+                           reg_vars=reg_vars)
     preds = 2.5*(preds + 1)
     preds = tf.reshape(tensor=preds,
                        shape=[tf.shape(input=preds, name="pred_shape")[0]],
@@ -82,10 +86,14 @@ def rating_pred_loss(preds: tf.Tensor, labels: tf.Tensor) -> tf.Tensor:
         loss = tf.losses.mean_squared_error(labels, preds)
         return tf.identity(input=loss, name="mse")
 
-def rating_regularizer(weights: tf.Tensor) -> tf.Tensor:
+def rating_regularizer(weights: List[tf.Tensor]) -> tf.Tensor:
     with tf.name_scope("rating_regularizer"):
-        loss = tf.reduce_mean(input_tensor=weights*weights,
-                              name="weights_norm")
+        loss = None
+        for w in weights:
+            if loss is None:
+                loss = tf.reduce_mean(input_tensor=w*w)
+            else:
+                loss += tf.reduce_mean(input_tensor=w*w)
         return loss
 
 def embeddings_unit_norm_loss(name: str, embeddings: tf.Tensor) -> tf.Tensor:
@@ -104,6 +112,7 @@ class latent_dnn:
                  user_embed_size: int,
                  num_movies: int,
                  movie_embed_size: int,
+                 indirect_cause: bool,
                  reset_and_train: bool,
                  num_iters=10000,
                  batch_size=200,
@@ -120,6 +129,8 @@ class latent_dnn:
                 be generated.
             movie_embed_size {int} -- The size of movie embeddings vector
                 to be generated.
+            indirect_cause {bool} -- Whether to assume there is an indirect
+                cause from the latent variables to the observable outcome.
             reset_and_train {bool} -- Whether to reset model parameters or
                 load them from checkpoint files.
 
@@ -143,6 +154,7 @@ class latent_dnn:
                          user_embed_size=user_embed_size,
                          num_movies=num_movies,
                          movie_embed_size=movie_embed_size,
+                         indirect_cause=indirect_cause,
                          learning_rate=learning_rate)
 
     def build_graph(self,
@@ -150,11 +162,15 @@ class latent_dnn:
                     user_embed_size: int,
                     num_movies: int,
                     movie_embed_size: int,
+                    indirect_cause: bool,
                     learning_rate: float):
-        """Build an NN graph.
+        """Build a multi-task embeddings model.
         """
+        tf.reset_default_graph()
+
         embeddings_vars = list()
         rating_pred_vars = list()
+        reg_vars = list()
 
         user_ids = user_id_one_hot_input(num_users=num_users)
         movie_ids = movie_id_one_hot_input(num_movies=num_movies)
@@ -173,33 +189,33 @@ class latent_dnn:
 
         concat_features = tf.concat(values=[user_embeddings, movie_embeddings],
                                     axis=1, name="concat_features")
-        # compress_size = (user_embed_size + movie_embed_size)//2
-        # compress = nn_dense_layer(name="compress",
-        #                           inputs=concat_features,
-        #                           input_size=user_embed_size + movie_embed_size,
-        #                           output_size=compress_size,
-        #                           act_func="tanh",
-        #                           vars=rating_pred_vars)
-        # rating_preds = prediction(inputs=compress,
-        #                           input_size=compress_size,
-        #                           vars=rating_pred_vars)
 
-        rating_preds = prediction(inputs=concat_features,
-                                  input_size=user_embed_size + movie_embed_size,
-                                  vars=rating_pred_vars)
+        if indirect_cause:
+            compress_size = (user_embed_size + movie_embed_size)//2
+            features = nn_dense_layer(name="compress",
+                                      inputs=concat_features,
+                                      input_size=user_embed_size + movie_embed_size,
+                                      output_size=compress_size,
+                                      act_func="tanh",
+                                      vars=rating_pred_vars,
+                                      reg_vars=reg_vars)
+            feature_size = compress_size
+        else:
+            features = concat_features
+            feature_size = user_embed_size + movie_embed_size
+
+        rating_preds = prediction(inputs=features,
+                                  input_size=feature_size,
+                                  vars=rating_pred_vars,
+                                  reg_vars=reg_vars)
 
         rating_label = label()
-        rating_loss = tf.identity(input=rating_pred_loss(preds=rating_preds,
-                                                         labels=rating_label) + \
-                                        rating_regularizer(weights=rating_pred_vars[0]),
+        pred_loss = rating_pred_loss(preds=rating_preds,
+                                     labels=rating_label)
+        rating_loss = tf.identity(input= pred_loss + \
+                                         rating_regularizer(weights=reg_vars),
                                   name="rating_loss")
-        # embeddings_loss = tf.identity(input=rating_loss + \
-        #                               embeddings_unit_norm_loss(embeddings=user_embeddings,
-        #                                                         name="user_embed_norm_loss") + \
-        #                               embeddings_unit_norm_loss(embeddings=movie_embeddings,
-        #                                                         name="movie_embed_norm_loss"),
-        #                               name="embeddings_loss")
-        embeddings_loss = tf.identity(input=rating_loss, name="embeddings_loss")
+        embeddings_loss = tf.identity(input=pred_loss, name="embeddings_loss")
 
         optimizer = tf.train.AdamOptimizer(learning_rate)
         optimizer.minimize(loss=embeddings_loss,
@@ -351,6 +367,9 @@ class latent_dnn:
             np.ndarray -- a float array consists N ratings prediction
                 over the user-movie pairs.
         """
+        user_ids = user_ids.astype(dtype=np.int32)
+        movie_ids = movie_ids.astype(dtype=np.int32)
+
         saver = tf.train.Saver()
 
         with tf.Session() as sess:

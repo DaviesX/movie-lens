@@ -127,7 +127,7 @@ class dnn_on_latent_space:
         global_step = tf.Variable(0, name="global_step", trainable=False)
         optimizer.minimize(loss, global_step=global_step, name="optimizer_node")
 
-    def fit(self, 
+    def fit(self,
             user_embed: np.ndarray, 
             movie_embed: np.ndarray, 
             rating: np.ndarray) -> None:
@@ -190,8 +190,8 @@ class dnn_on_latent_space:
             saver.save(sess=sess, save_path=self.model_meta_path_)
             print("Saved model parameters.")
 
-    def predict(self, 
-                user_embed: np.ndarray, 
+    def predict(self,
+                user_embed: np.ndarray,
                 movie_embed: np.ndarray) -> np.ndarray:
         """Make rating prediction on user-movie pair.
 
@@ -206,6 +206,9 @@ class dnn_on_latent_space:
             np.ndarray -- a float array consists N ratings prediction
                 over the user-movie pairs.
         """
+        user_embed = user_embed.astype(dtype=np.float32)
+        movie_embed = movie_embed.astype(dtype=np.float32)
+
         saver = tf.train.Saver()
 
         with tf.Session() as sess:
