@@ -274,7 +274,7 @@ class latent_dnn:
                 if num_iters_for_curr_task > 1000 and curr_task == "embeddings":
                     curr_task = "rating_pred"
                     num_iters_for_curr_task = 0
-                if num_iters_for_curr_task > 500 and curr_task == "rating_pred":
+                if num_iters_for_curr_task > 1000 and curr_task == "rating_pred":
                     curr_task = "embeddings"
                     num_iters_for_curr_task = 0
 

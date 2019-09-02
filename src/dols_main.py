@@ -98,7 +98,7 @@ def main(training_mode: bool):
         model_meta_path="../meta/dols.ckpt",
         user_embed_size=USER_EMBEDDINGS_SIZE,
         movie_embed_size=MOVIE_EMBEDDINGS_SIZE,
-        embedding_transform=False,
+        embedding_transform=True,
         reset_and_train=True)
 
     if training_mode:
