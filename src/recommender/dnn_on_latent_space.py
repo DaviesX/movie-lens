@@ -47,8 +47,8 @@ class dnn_on_latent_space:
                  num_iters=200000,
                  batch_size=100,
                  learning_rate=0.0001):
-        """Construct a deep neural network recommender model that uses a
-        latent space representation inputs of users and movies.
+        """Construct a deep neural network missing-value completion model based on
+        a latent space that explains users and movies.
 
         Arguments:
             model_meta_path {str} -- Location where the model parameters

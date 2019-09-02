@@ -23,9 +23,6 @@ def main(training_mode: bool):
 
     # Compute linear latent space and the corresponding vectors for both
     # users and movies.
-    um_train = dataset.load_sparse_matrix(file="../data/raw_ratings_train.npz")
-    um_valid = dataset.load_sparse_matrix(file="../data/raw_ratings_valid.npz")
-
     # Construct a latent space for movies.
     movie_embed = ltsvd.movie_latent_trunc_svd( \
         um=um_train,
@@ -60,7 +57,7 @@ def main(training_mode: bool):
     dataset.save_dense_array(file="../data/latent_tsvd_user_valid.npz",
                              arr=user_embed_valid)
 
-    # Construct a latent space for users and movies using the latent_dnn model.
+    # Fine tune the latent space by using the latent_dnn model.
     num_users = row2uid.shape[0]
     num_movies = col2mid.shape[0]
     model = ldnn.latent_dnn(model_meta_path="../meta/latent_dnn.ckpt",
@@ -93,7 +90,7 @@ def main(training_mode: bool):
     print("train_mse=", eval_mse.mse(um_train.data, pred_ratings_train))
     print("valid_mse=", eval_mse.mse(um_valid.data, pred_ratings_valid))
 
-    # Train model using the rated embeddings training set.
+    # Train a missing-value completion model over the latent vectors.
     model = dols.dnn_on_latent_space( \
         model_meta_path="../meta/dols.ckpt",
         user_embed_size=USER_EMBEDDINGS_SIZE,
@@ -114,7 +111,8 @@ def main(training_mode: bool):
     dataset.save_dense_array(file="../data/dols_preds_train.npz", arr=pred_ratings_train)
     dataset.save_dense_array(file="../data/dols_preds_valid.npz", arr=pred_ratings_valid)
 
-    # Evaluate by the MSE objective.
+    # Evaluate the performance of the missing-value completion model on the
+    # MSE objective.
     print("train_mse=", eval_mse.mse(um_train.data, pred_ratings_train))
     print("valid_mse=", eval_mse.mse(um_valid.data, pred_ratings_valid))
 
