@@ -1,5 +1,6 @@
 ml-20m/*
 data/*
 meta/*
+*/.ipynb_checkpoints/*
 __pycache__/
 

@@ -71,7 +71,7 @@ class dnn_on_latent_space:
         # Constant hyper-params.
         self.MOVIE_EMBEDDINGS_TRANSFORMED_SIZE = 10
         self.USER_EMBEDDINGS_TRANSFORMED_SIZE = 15
-        
+
         # Configurable hyper-params
         self.user_embed_size_ = user_embed_size
         self.movie_embed_size_ = movie_embed_size
@@ -85,13 +85,15 @@ class dnn_on_latent_space:
                          embedding_transform=embedding_transform,
                          learning_rate=learning_rate)
 
-    def build_graph(self, 
+    def build_graph(self,
                     user_embed_size: int,
                     movie_embed_size: int,
                     embedding_transform: bool,
                     learning_rate: float):
         """Build an NN graph.
         """
+        tf.reset_default_graph()
+
         user_embeddings = embeddings_input(embedding_name="user_embeddings", 
                                            embed_size=user_embed_size)
         movie_embeddings = embeddings_input(embedding_name="movie_embeddings", 
@@ -130,7 +132,7 @@ class dnn_on_latent_space:
             movie_embed: np.ndarray, 
             rating: np.ndarray) -> None:
         """Fit the NN model to the user-movie embedding pairs and ratings.
-        
+
         Arguments:
             user_embed {np.ndarray} -- U*E_user matrix where U is
                 the number of users and E_user is the embedding size.
@@ -142,20 +144,15 @@ class dnn_on_latent_space:
             fit() assumes that user_embed.shape[0] == movie_embed.shape[0] and
             movie_embed.shape[0] == rating.shape[0]
         """
-        saver = None
-        graph: tf.Graph = None
+        saver = tf.train.Saver()
 
         with tf.Session() as sess:
             if self.reset_and_train_:
-                saver = tf.train.Saver()
-                graph = tf.get_default_graph()
                 sess.run(tf.global_variables_initializer())
             else:
-                saver = tf.train.import_meta_graph(
-                    meta_graph_or_file=self.model_meta_path_ + ".meta")
-                saver.restore(sess, tf.train.latest_checkpoint('./'))
-                graph = tf.get_default_graph()
+                saver.restore(sess, self.model_meta_path_)
 
+            graph = tf.get_default_graph()
             user_embed_node = graph.get_tensor_by_name("user_embeddings/input:0")
             movie_embed_node = graph.get_tensor_by_name("movie_embeddings/input:0")
             rating_node = graph.get_tensor_by_name("label/rating:0")
@@ -167,8 +164,8 @@ class dnn_on_latent_space:
             for i in range(self.num_iters_):
                 batch_idx = np.random.randint(low=0, high=dataset_size,
                                               size=self.batch_size_)
-                batch_user_embed = user_embed[batch_idx,:]
-                batch_movie_embed = movie_embed[batch_idx,:]
+                batch_user_embed = user_embed[batch_idx, :]
+                batch_movie_embed = movie_embed[batch_idx, :]
                 batch_rating = rating[batch_idx]
 
                 optimizer_node.run(feed_dict={
@@ -184,7 +181,7 @@ class dnn_on_latent_space:
                         rating_node: batch_rating,
                     })
                     print("Loss at ", i, "=", loss_val)
-            
+
             print("Training complete. ")
             saver.save(sess=sess, save_path=self.model_meta_path_)
             print("Saved model parameters.")
@@ -193,7 +190,7 @@ class dnn_on_latent_space:
                 user_embed: np.ndarray, 
                 movie_embed: np.ndarray) -> np.ndarray:
         """Make rating prediction on user-movie pair.
-        
+
         Arguments:
             user_embed {np.ndarray} -- U*E_user matrix where U is
                     the number of users and E_user is the embedding size.
@@ -210,7 +207,7 @@ class dnn_on_latent_space:
         with tf.Session() as sess:
             saver.restore(sess, self.model_meta_path_)
             graph = tf.get_default_graph()
-            
+
             user_embed_node = graph.get_tensor_by_name("user_embeddings/input:0")
             movie_embed_node = graph.get_tensor_by_name("movie_embeddings/input:0")
             rating_pred_node = graph.get_tensor_by_name("rating_preds:0")
