@@ -233,6 +233,12 @@ class latent_dnn:
             fit() assumes that user_embed.shape[0] == movie_embed.shape[0] and
             movie_embed.shape[0] == rating.shape[0]
         """
+        user_embed_table = user_embed_table.astype(dtype=np.float32)
+        movie_embed_table = movie_embed_table.astype(dtype=np.float32)
+        user_ids = user_ids.astype(dtype=np.int32)
+        movie_ids = movie_ids.astype(dtype=np.int32)
+        rating = rating.astype(dtype=np.float32)
+
         with tf.Session() as sess:
             saver = tf.train.Saver()
             if self.reset_and_train_:

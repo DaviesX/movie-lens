@@ -2,7 +2,7 @@ import numpy as np
 from data import dataset
 from latent import latent_truncated_svd as ltsvd
 from latent import latent_dnn as ldnn
-from recommender import dnn_on_latent_space as dols
+from completion import dnn_on_latent_space as dols
 from eval import eval_mse
 
 from hparams import MOVIE_EMBEDDINGS_SIZE
@@ -22,6 +22,8 @@ def main(training_mode: bool):
     dataset.save_sparse_matrix(file="../data/raw_ratings_valid.npz", mat=um_valid)
 
     # Compute linear latent space and the corresponding vectors for both
+    # um_train = dataset.load_sparse_matrix(file="../data/raw_ratings_train.npz")
+    # um_valid = dataset.load_sparse_matrix(file="../data/raw_ratings_valid.npz")
     # users and movies.
     # Construct a latent space for movies.
     movie_embed = ltsvd.movie_latent_trunc_svd( \

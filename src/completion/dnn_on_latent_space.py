@@ -144,6 +144,10 @@ class dnn_on_latent_space:
             fit() assumes that user_embed.shape[0] == movie_embed.shape[0] and
             movie_embed.shape[0] == rating.shape[0]
         """
+        user_embed = user_embed.astype(dtype=np.float32)
+        movie_embed = movie_embed.astype(dtype=np.float32)
+        rating = rating.astype(dtype=np.float32)
+
         saver = tf.train.Saver()
 
         with tf.Session() as sess:
