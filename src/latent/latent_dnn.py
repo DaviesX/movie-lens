@@ -173,12 +173,6 @@ class latent_dnn:
         tf.reset_default_graph()
 
         embeddings_vars = list()
-        rating_pred_vars = list()
-        reg_vars = list()
-
-        user_ids = user_id_one_hot_input(num_users=num_users)
-        movie_ids = movie_id_one_hot_input(num_movies=num_movies)
-
         user_embed_table = embeddings_table(name="user_embed",
                                             num_vecs=num_users,
                                             latent_size=user_embed_size,
@@ -188,12 +182,49 @@ class latent_dnn:
                                              latent_size=movie_embed_size,
                                              vars=embeddings_vars)
 
-        user_embeddings = tf.matmul(a=user_ids, b=user_embed_table, name="pick_up_user_embed")
-        movie_embeddings = tf.matmul(a=movie_ids, b=movie_embed_table, name="pick_up_movie_embed")
+        with tf.name_scope("rating_pred_group"):
+            self.build_rating_pred_task( \
+                num_users=num_users,
+                num_movies=num_movies,
+                user_embed_table=user_embed_table,
+                movie_embed_table=movie_embed_table,
+                user_embed_size=user_embed_size,
+                movie_embed_size=movie_embed_size,
+                indirect_cause=indirect_cause,
+                embeddings_vars=embeddings_vars,
+                learning_rate=learning_rate)
 
-        concat_features = tf.concat(values=[user_embeddings, movie_embeddings],
+
+    def build_rating_pred_task(self,
+                               num_users: int,
+                               num_movies: int,
+                               user_embed_table: tf.Tensor,
+                               movie_embed_table: tf.Tensor,
+                               user_embed_size: int,
+                               movie_embed_size: int,
+                               indirect_cause: bool,
+                               embeddings_vars: List[tf.Tensor],
+                               learning_rate: float):
+        """Train embedding vectors by making rating predictions given the pair
+        (USER_ID, MOVIE_ID).
+        """
+        user_ids = user_id_one_hot_input(num_users=num_users)
+        movie_ids = movie_id_one_hot_input(num_movies=num_movies)
+
+        user_embed = tf.matmul(a=user_ids,
+                               b=user_embed_table,
+                               name="pick_up_user_embed")
+        movie_embed = tf.matmul(a=movie_ids,
+                                b=movie_embed_table,
+                                name="pick_up_movie_embed")
+
+        concat_features = tf.concat(values=[user_embed, movie_embed],
                                     axis=1, name="concat_features")
-        concat_features = tf.nn.dropout(x=concat_features, keep_prob=keep_prob(name="concat"))
+        concat_features = tf.nn.dropout(x=concat_features, 
+                                        keep_prob=keep_prob(name="concat"))
+
+        rating_pred_vars = list()
+        reg_vars = list()
 
         if indirect_cause:
             compress_size = (user_embed_size + movie_embed_size)//2
@@ -220,12 +251,12 @@ class latent_dnn:
         rating_loss = tf.identity(input= pred_loss + \
                                          rating_regularizer(weights=reg_vars),
                                   name="rating_loss")
-        embeddings_loss = tf.identity(input=pred_loss, name="embeddings_loss")
+        embeddings_loss = tf.identity(input=pred_loss, name="rating_embeddings_loss")
 
         optimizer = tf.train.AdamOptimizer(learning_rate)
         optimizer.minimize(loss=embeddings_loss,
                            var_list=embeddings_vars,
-                           name="embeddings_task")
+                           name="rating_embeddings_task")
         optimizer.minimize(loss=rating_loss,
                            var_list=rating_pred_vars,
                            name="rating_pred_task")
@@ -277,16 +308,16 @@ class latent_dnn:
                 table = graph.get_tensor_by_name("movie_embed/embed_table:0")
                 sess.run(tf.assign(ref=table, value=movie_embed_table))
 
-            user_input_node = graph.get_tensor_by_name("user_input/user_id:0")
-            movie_input_node = graph.get_tensor_by_name("movie_input/movie_id:0")
-            rating_node = graph.get_tensor_by_name("label/rating:0")
-            concat_keep_prob = graph.get_tensor_by_name("concat/keep_prob:0")
+            user_input_node = graph.get_tensor_by_name("rating_pred_group/user_input/user_id:0")
+            movie_input_node = graph.get_tensor_by_name("rating_pred_group/movie_input/movie_id:0")
+            rating_node = graph.get_tensor_by_name("rating_pred_group/label/rating:0")
+            concat_keep_prob = graph.get_tensor_by_name("rating_pred_group/concat/keep_prob:0")
 
-            embeddings_task = graph.get_operation_by_name("embeddings_task")
-            rating_pred_task = graph.get_operation_by_name("rating_pred_task")
+            rating_embed_task = graph.get_operation_by_name("rating_pred_group/rating_embeddings_task")
+            rating_pred_task = graph.get_operation_by_name("rating_pred_group/rating_pred_task")
 
-            rating_loss_node = graph.get_tensor_by_name("rating_loss:0")
-            embeddings_loss_node = graph.get_tensor_by_name("embeddings_loss:0")
+            rating_loss_node = graph.get_tensor_by_name("rating_pred_group/rating_loss:0")
+            rating_embed_loss_node = graph.get_tensor_by_name("rating_pred_group/rating_embeddings_loss:0")
 
             dataset_size = user_ids.shape[0]
 
@@ -307,7 +338,7 @@ class latent_dnn:
                     num_iters_for_curr_task = 0
 
                 if curr_task == "embeddings":
-                    embeddings_task.run(feed_dict={
+                    rating_embed_task.run(feed_dict={
                         user_input_node: batch_user_ids,
                         movie_input_node: batch_movie_ids,
                         rating_node: batch_rating,
@@ -323,7 +354,7 @@ class latent_dnn:
                 num_iters_for_curr_task += 1
 
                 if i % 100 == 0:
-                    losses = sess.run(fetches=[embeddings_loss_node,
+                    losses = sess.run(fetches=[rating_embed_loss_node,
                                                rating_loss_node],
                                       feed_dict={
                                           user_input_node: batch_user_ids,
@@ -333,7 +364,7 @@ class latent_dnn:
                                       })
                     print("At", i,
                           "|task=", curr_task,
-                          "|embeddings_loss=", losses[0],
+                          "|rating_embed_loss=", losses[0],
                           "|rating_loss=", losses[1])
 
             print("Training complete. ")
@@ -386,10 +417,10 @@ class latent_dnn:
 
             graph = tf.get_default_graph()
 
-            user_input_node = graph.get_tensor_by_name("user_input/user_id:0")
-            movie_input_node = graph.get_tensor_by_name("movie_input/movie_id:0")
-            rating_preds_node = graph.get_tensor_by_name("rating_preds:0")
-            concat_keep_prob = graph.get_tensor_by_name("concat/keep_prob:0")
+            user_input_node = graph.get_tensor_by_name("rating_pred_group/user_input/user_id:0")
+            movie_input_node = graph.get_tensor_by_name("rating_pred_group/movie_input/movie_id:0")
+            rating_preds_node = graph.get_tensor_by_name("rating_pred_group/rating_preds:0")
+            concat_keep_prob = graph.get_tensor_by_name("rating_pred_group/concat/keep_prob:0")
 
             dataset_size = user_ids.shape[0]
             rating_pred = np.zeros(shape=(dataset_size))
