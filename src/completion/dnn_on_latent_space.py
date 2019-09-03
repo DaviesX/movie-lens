@@ -17,6 +17,10 @@ def embeddings_input(embedding_name: str, embed_size: int):
                               shape=[None, embed_size], 
                               name="input")
 
+def keep_prob(name: str):
+    with tf.name_scope(name):
+        return tf.placeholder(tf.float32, name="keep_prob")
+
 def nn_dense_layer(name: str, input, input_size: int, output_size: int):
     with tf.name_scope(name):
         weights = tf.Variable(tf.truncated_normal(shape=[input_size, output_size],
@@ -46,7 +50,7 @@ class dnn_on_latent_space:
                  reset_and_train: bool,
                  num_iters=200000,
                  batch_size=100,
-                 learning_rate=0.0001):
+                 learning_rate=0.001):
         """Construct a deep neural network missing-value completion model based on
         a latent space that explains users and movies.
 
@@ -113,7 +117,10 @@ class dnn_on_latent_space:
 
         concat_features = tf.concat(values=[user_embeddings, movie_embeddings],
                                     axis=1, name="concat_features")
-        compress_size: int = (user_embed_size + movie_embed_size)//2
+        concat_features = tf.nn.dropout(x=concat_features,
+                                        keep_prob=keep_prob(name="concat"))
+
+        compress_size = (user_embed_size + movie_embed_size)//2
         compress = nn_dense_layer(name="compress",
                                   input=concat_features,
                                   input_size=user_embed_size + movie_embed_size,
@@ -157,9 +164,12 @@ class dnn_on_latent_space:
                 saver.restore(sess, self.model_meta_path_)
 
             graph = tf.get_default_graph()
+
             user_embed_node = graph.get_tensor_by_name("user_embeddings/input:0")
             movie_embed_node = graph.get_tensor_by_name("movie_embeddings/input:0")
             rating_node = graph.get_tensor_by_name("label/rating:0")
+            concat_keep_prob = graph.get_tensor_by_name("concat/keep_prob:0")
+
             optimizer_node = graph.get_operation_by_name("optimizer_node")
             loss_node = graph.get_tensor_by_name("loss/mse_loss:0")
 
@@ -176,6 +186,7 @@ class dnn_on_latent_space:
                     user_embed_node: batch_user_embed,
                     movie_embed_node: batch_movie_embed,
                     rating_node: batch_rating,
+                    concat_keep_prob: 0.8
                 })
 
                 if i % 1000 == 0:
@@ -183,6 +194,7 @@ class dnn_on_latent_space:
                         user_embed_node: batch_user_embed,
                         movie_embed_node: batch_movie_embed,
                         rating_node: batch_rating,
+                        concat_keep_prob: 1.0
                     })
                     print("Loss at ", i, "=", loss_val)
 
@@ -218,10 +230,12 @@ class dnn_on_latent_space:
             user_embed_node = graph.get_tensor_by_name("user_embeddings/input:0")
             movie_embed_node = graph.get_tensor_by_name("movie_embeddings/input:0")
             rating_pred_node = graph.get_tensor_by_name("rating_preds:0")
+            concat_keep_prob = graph.get_tensor_by_name("concat/keep_prob:0")
 
             rating_pred = rating_pred_node.eval(feed_dict={
                 user_embed_node: user_embed,
                 movie_embed_node: movie_embed,
+                concat_keep_prob: 1.0
             })
 
             return rating_pred

@@ -38,6 +38,10 @@ def embeddings_table(name: str,
         vars.append(embed_table)
         return embed_table
 
+def keep_prob(name: str):
+    with tf.name_scope(name):
+        return tf.placeholder(tf.float32, name="keep_prob")
+
 def nn_dense_layer(name: str,
                    inputs: tf.Tensor,
                    input_size: int,
@@ -116,7 +120,7 @@ class latent_dnn:
                  reset_and_train: bool,
                  num_iters=10000,
                  batch_size=200,
-                 learning_rate=0.0001):
+                 learning_rate=0.001):
         """Construct latent spaces for both user and movie by using rating
         prediction as the training task.
 
@@ -189,7 +193,7 @@ class latent_dnn:
 
         concat_features = tf.concat(values=[user_embeddings, movie_embeddings],
                                     axis=1, name="concat_features")
-        concat_features = tf.nn.dropout(x=concat_features, keep_prob=0.8)
+        concat_features = tf.nn.dropout(x=concat_features, keep_prob=keep_prob(name="concat"))
 
         if indirect_cause:
             compress_size = (user_embed_size + movie_embed_size)//2
@@ -276,6 +280,7 @@ class latent_dnn:
             user_input_node = graph.get_tensor_by_name("user_input/user_id:0")
             movie_input_node = graph.get_tensor_by_name("movie_input/movie_id:0")
             rating_node = graph.get_tensor_by_name("label/rating:0")
+            concat_keep_prob = graph.get_tensor_by_name("concat/keep_prob:0")
 
             embeddings_task = graph.get_operation_by_name("embeddings_task")
             rating_pred_task = graph.get_operation_by_name("rating_pred_task")
@@ -306,22 +311,25 @@ class latent_dnn:
                         user_input_node: batch_user_ids,
                         movie_input_node: batch_movie_ids,
                         rating_node: batch_rating,
+                        concat_keep_prob: 0.7
                     })
                 elif curr_task == "rating_pred":
                     rating_pred_task.run(feed_dict={
                         user_input_node: batch_user_ids,
                         movie_input_node: batch_movie_ids,
                         rating_node: batch_rating,
+                        concat_keep_prob: 0.7
                     })
                 num_iters_for_curr_task += 1
 
                 if i % 100 == 0:
-                    losses = sess.run(fetches=[embeddings_loss_node, 
+                    losses = sess.run(fetches=[embeddings_loss_node,
                                                rating_loss_node],
                                       feed_dict={
                                           user_input_node: batch_user_ids,
                                           movie_input_node: batch_movie_ids,
                                           rating_node: batch_rating,
+                                          concat_keep_prob: 1.0
                                       })
                     print("At", i,
                           "|task=", curr_task,
@@ -381,6 +389,7 @@ class latent_dnn:
             user_input_node = graph.get_tensor_by_name("user_input/user_id:0")
             movie_input_node = graph.get_tensor_by_name("movie_input/movie_id:0")
             rating_preds_node = graph.get_tensor_by_name("rating_preds:0")
+            concat_keep_prob = graph.get_tensor_by_name("concat/keep_prob:0")
 
             dataset_size = user_ids.shape[0]
             rating_pred = np.zeros(shape=(dataset_size))
@@ -388,6 +397,7 @@ class latent_dnn:
                 pred = rating_preds_node.eval(feed_dict={
                     user_input_node: user_ids[i:i + self.batch_size_],
                     movie_input_node: movie_ids[i:i + self.batch_size_],
+                    concat_keep_prob: 1.0
                 })
                 rating_pred[i:i + pred.shape[0]] = pred
 
