@@ -299,8 +299,8 @@ class latent_dnn:
                                        indirect_cause: bool,
                                        embeddings_vars: List[tf.Tensor],
                                        learning_rate: float):
-        """Train embedding vectors by making binary classification given a tuple
-        (USER_ID, MOVIE1_ID, MOVIE2_ID) that whether movie1 can receive higher
+        """Train embedding vectors by enforcing conditional binary ordering given
+        a tuple (USER_ID, MOVIE1_ID, MOVIE2_ID) where movie1 must receive higher
         rating than movie2.
         """
         user_ids = user_id_one_hot_input(num_users=num_users)
