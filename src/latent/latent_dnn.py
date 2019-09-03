@@ -7,11 +7,17 @@ import math as m
 from hparams import MOVIE_EMBEDDINGS_SIZE
 from hparams import USER_EMBEDDINGS_SIZE
 
-def label() -> tf.Tensor:
+def rating_label() -> tf.Tensor:
     with tf.name_scope("label"):
         return tf.placeholder(dtype=tf.float32,
                               shape=[None],
                               name="rating")
+
+def pairwise_movie_label() -> tf.Tensor:
+    with tf.name_scope("label"):
+        return tf.placeholder(dtype=tf.int32,
+                              shape=[None],
+                              name="pairwise_movie")
 
 def movie_id_one_hot_input(num_movies: int) -> tf.Tensor:
     with tf.name_scope("movie_input"):
@@ -33,7 +39,7 @@ def embeddings_table(name: str,
                      vars: list) -> tf.Tensor:
     with tf.name_scope(name):
         embed_table = tf.Variable(tf.truncated_normal(shape=[num_vecs, latent_size],
-                                                      stddev=1.0/m.sqrt(float(latent_size))),
+                                                      stddev=0.01),
                                   name="embed_table")
         vars.append(embed_table)
         return embed_table
@@ -61,17 +67,20 @@ def nn_dense_layer(name: str,
 
         lin_t = tf.matmul(a=inputs, b=weights, name="linear_trans")
         features = tf.add(x=lin_t, y=biases, name="translate")
-        if act_func == "relu":
+
+        if act_func is None:
+            return features
+        elif act_func == "relu":
             return tf.nn.relu(features=features, name="layer_output")
         elif act_func == "tanh":
             return tf.tanh(x=features, name="layer_output")
         else:
             raise "Unknown activaion function " + act_func
 
-def prediction(inputs: tf.Tensor,
-               input_size: int,
-               vars: List[tf.Tensor],
-               reg_vars: List[tf.Tensor]) -> tf.Tensor:
+def pred_rating(inputs: tf.Tensor,
+                input_size: int,
+                vars: List[tf.Tensor],
+                reg_vars: List[tf.Tensor]) -> tf.Tensor:
     preds = nn_dense_layer(name="prediction",
                            inputs=inputs,
                            input_size=input_size,
@@ -85,10 +94,29 @@ def prediction(inputs: tf.Tensor,
                        name="rating_preds")
     return preds
 
+def pred_pairwise_movie(inputs: tf.Tensor,
+                        input_size: int,
+                        vars: List[tf.Tensor],
+                        reg_vars: List[tf.Tensor]) -> tf.Tensor:
+    logits = nn_dense_layer(name="prediction",
+                            inputs=inputs,
+                            input_size=input_size,
+                            output_size=2,
+                            act_func=None,
+                            vars=vars,
+                            reg_vars=reg_vars)
+    preds = tf.nn.softmax(logits=logits, name="pairwise_movie_preds")
+    return logits, preds
+
 def rating_pred_loss(preds: tf.Tensor, labels: tf.Tensor) -> tf.Tensor:
     with tf.name_scope("rating_pred_loss"):
         loss = tf.losses.mean_squared_error(labels, preds)
         return tf.identity(input=loss, name="mse")
+
+def pairwise_movie_pred_loss(logits: tf.Tensor, labels: tf.Tensor) -> tf.Tensor:
+    with tf.name_scope("pairwise_movie_pred_loss"):
+        loss = tf.losses.sparse_softmax_cross_entropy(labels=labels, logits=logits)
+        return tf.identity(input=loss, name="cross_entropy")
 
 def rating_regularizer(weights: List[tf.Tensor]) -> tf.Tensor:
     with tf.name_scope("rating_regularizer"):
@@ -240,14 +268,13 @@ class latent_dnn:
             features = concat_features
             feature_size = user_embed_size + movie_embed_size
 
-        rating_preds = prediction(inputs=features,
-                                  input_size=feature_size,
-                                  vars=rating_pred_vars,
-                                  reg_vars=reg_vars)
+        rating_preds = pred_rating(inputs=features,
+                                   input_size=feature_size,
+                                   vars=rating_pred_vars,
+                                   reg_vars=reg_vars)
 
-        rating_label = label()
         pred_loss = rating_pred_loss(preds=rating_preds,
-                                     labels=rating_label)
+                                     labels=rating_label())
         rating_loss = tf.identity(input= pred_loss + \
                                          rating_regularizer(weights=reg_vars),
                                   name="rating_loss")
@@ -260,6 +287,71 @@ class latent_dnn:
         optimizer.minimize(loss=rating_loss,
                            var_list=rating_pred_vars,
                            name="rating_pred_task")
+
+    def build_pairwise_movie_pred_task(self,
+                                       num_users: int,
+                                       num_movies: int,
+                                       user_embed_table: tf.Tensor,
+                                       movie_embed_table: tf.Tensor,
+                                       user_embed_size: int,
+                                       movie_embed_size: int,
+                                       indirect_cause: bool,
+                                       embeddings_vars: List[tf.Tensor],
+                                       learning_rate: float):
+        """Train embedding vectors by making binary classification given a tuple
+        (USER_ID, MOVIE1_ID, MOVIE2_ID) that whether movie1 can receive higher
+        rating than movie2.
+        """
+        user_ids = user_id_one_hot_input(num_users=num_users)
+        movie1_ids = movie_id_one_hot_input(num_movies=num_movies)
+        movie2_ids = movie_id_one_hot_input(num_movies=num_movies)
+
+        user_embed = tf.matmul(a=user_ids,
+                               b=user_embed_table,
+                               name="pick_up_user_embed")
+        movie1_embed = tf.matmul(a=movie1_ids,
+                                 b=movie_embed_table,
+                                 name="pick_up_movie1_embed")
+        movie2_embed = tf.matmul(a=movie2_ids,
+                                 b=movie_embed_table,
+                                 name="pick_up_movie2_embed")
+
+        concat_features = tf.concat(values=[user_embed, movie1_embed, movie2_embed],
+                                    axis=1, name="concat_features")
+
+        pairwise_pred_vars = list()
+        reg_vars = list()
+
+        if indirect_cause:
+            compress_size = (user_embed_size + 2*movie_embed_size)//2
+            features = nn_dense_layer(name="compress",
+                                      inputs=concat_features,
+                                      input_size=user_embed_size + 2*movie_embed_size,
+                                      output_size=compress_size,
+                                      act_func="tanh",
+                                      vars=pairwise_pred_vars,
+                                      reg_vars=reg_vars)
+            feature_size = compress_size
+        else:
+            features = concat_features
+            feature_size = user_embed_size + 2*movie_embed_size
+
+        logits, _ = pred_pairwise_movie( \
+            inputs=features,
+            input_size=feature_size,
+            vars=pairwise_pred_vars,
+            reg_vars=reg_vars)
+
+        loss = pairwise_movie_pred_loss(logits=logits,
+                                        labels=pairwise_movie_label())
+
+        optimizer = tf.train.AdamOptimizer(learning_rate)
+        optimizer.minimize(loss=loss,
+                           var_list=embeddings_vars,
+                           name="pairwise_movie_embed_task")
+        optimizer.minimize(loss=loss,
+                           var_list=pairwise_pred_vars,
+                           name="pairwise_movie_pred_task")
 
     def fit(self,
             user_embed_table: np.ndarray,
@@ -285,8 +377,6 @@ class latent_dnn:
             fit() assumes that user_embed.shape[0] == movie_embed.shape[0] and
             movie_embed.shape[0] == rating.shape[0]
         """
-        user_embed_table = user_embed_table.astype(dtype=np.float32)
-        movie_embed_table = movie_embed_table.astype(dtype=np.float32)
         user_ids = user_ids.astype(dtype=np.int32)
         movie_ids = movie_ids.astype(dtype=np.int32)
         rating = rating.astype(dtype=np.float32)
@@ -302,11 +392,13 @@ class latent_dnn:
 
             if user_embed_table is not None:
                 table = graph.get_tensor_by_name("user_embed/embed_table:0")
-                sess.run(tf.assign(ref=table, value=user_embed_table))
+                sess.run(tf.assign(ref=table,
+                                   value=user_embed_table.astype(dtype=np.float32)))
 
             if movie_embed_table is not None:
                 table = graph.get_tensor_by_name("movie_embed/embed_table:0")
-                sess.run(tf.assign(ref=table, value=movie_embed_table))
+                sess.run(tf.assign(ref=table,
+                                   value=movie_embed_table.astype(dtype=np.float32)))
 
             user_input_node = graph.get_tensor_by_name("rating_pred_group/user_input/user_id:0")
             movie_input_node = graph.get_tensor_by_name("rating_pred_group/movie_input/movie_id:0")
