@@ -29,14 +29,12 @@ def user_id_one_hot_input(num_users: int) -> tf.Tensor:
 
 def embeddings_table(name: str,
                      num_vecs: int,
-                     latent_size: int,
-                     vars: list) -> tf.Tensor:
+                     latent_size: int) -> tf.Tensor:
     with tf.variable_scope(name, reuse=tf.AUTO_REUSE):
         embed_table = tf.get_variable( \
             name="embed_table",
             initializer=tf.truncated_normal(shape=[num_vecs, latent_size],
                                             stddev=0.01))
-        vars.append(embed_table)
         return embed_table
 
 def keep_prob(name: str):
@@ -184,15 +182,12 @@ class latent_dnn:
         """
         tf.reset_default_graph()
 
-        embeddings_vars = list()
         user_embed_table = embeddings_table(name="user_embed",
                                             num_vecs=num_users,
-                                            latent_size=user_embed_size,
-                                            vars=embeddings_vars)
+                                            latent_size=user_embed_size)
         movie_embed_table = embeddings_table(name="movie_embed",
                                              num_vecs=num_movies,
-                                             latent_size=movie_embed_size,
-                                             vars=embeddings_vars)
+                                             latent_size=movie_embed_size)
 
         with tf.name_scope("rating_pred_group"):
             self.build_rating_pred_task( \
@@ -203,7 +198,6 @@ class latent_dnn:
                 user_embed_size=user_embed_size,
                 movie_embed_size=movie_embed_size,
                 indirect_cause=indirect_cause,
-                embeddings_vars=embeddings_vars,
                 learning_rate=learning_rate)
 
     def build_predict_rating(self,
@@ -216,7 +210,7 @@ class latent_dnn:
                              reg_vars: List[tf.Tensor]) -> tf.Tensor:
         concat_features = tf.concat(values=[user_embed, movie_embed],
                                     axis=1, name="concat_features")
-        concat_features = tf.nn.dropout(x=concat_features, 
+        concat_features = tf.nn.dropout(x=concat_features,
                                         keep_prob=keep_prob(name="concat"))
 
         if indirect_cause:
@@ -247,7 +241,6 @@ class latent_dnn:
                                user_embed_size: int,
                                movie_embed_size: int,
                                indirect_cause: bool,
-                               embeddings_vars: List[tf.Tensor],
                                learning_rate: float):
         """Train embedding vectors by making rating predictions given the pair
         (USER_ID, MOVIE_ID).
@@ -283,7 +276,7 @@ class latent_dnn:
 
         optimizer = tf.train.AdamOptimizer(learning_rate)
         optimizer.minimize(loss=embeddings_loss,
-                           var_list=embeddings_vars,
+                           var_list=[user_embed_table, movie_embed_table],
                            name="rating_embeddings_task")
         optimizer.minimize(loss=rating_loss,
                            var_list=rating_pred_vars,
@@ -297,7 +290,6 @@ class latent_dnn:
                                        user_embed_size: int,
                                        movie_embed_size: int,
                                        indirect_cause: bool,
-                                       embeddings_vars: List[tf.Tensor],
                                        learning_rate: float):
         """Train embedding vectors by enforcing conditional binary ordering given
         a tuple (USER_ID, MOVIE1_ID, MOVIE2_ID) where movie1 must receive higher
@@ -338,8 +330,11 @@ class latent_dnn:
 
         optimizer = tf.train.AdamOptimizer(learning_rate)
         optimizer.minimize(loss=loss,
-                           var_list=embeddings_vars,
-                           name="pairwise_movie_embed_task")
+                           var_list=[movie_embed_table],
+                           name="pairwise_movie_movie_embed_task")
+        optimizer.minimize(loss=loss,
+                           var_list=[movie_embed_table],
+                           name="pairwise_movie_user_embed_task")
 
     def fit(self,
             user_embed_table: np.ndarray,
@@ -450,7 +445,7 @@ class latent_dnn:
                                           rating_node: batch_rating,
                                           concat_keep_prob: 1.0
                                       })
-                    print("At", i,
+                    print("Epoch", round(i*self.batch_size_/rating.shape[0], 3),
                           "|task=", curr_task,
                           "|rating_embed_loss=", losses[0],
                           "|rating_loss=", losses[1])
