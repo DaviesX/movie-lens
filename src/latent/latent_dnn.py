@@ -336,12 +336,60 @@ class latent_dnn:
                            var_list=[movie_embed_table],
                            name="pairwise_movie_user_embed_task")
 
+    def sample_pairwise_movies_and_users(self,
+                                         num_users: int,
+                                         user_ids: np.ndarray,
+                                         movie_ids: np.ndarray,
+                                         ratings: np.ndarray,
+                                         batch_size: int) -> \
+                                         Tuple[List[int], List[int], List[int]]:
+        selected_users = np.random.randint(low=0, high=num_users, size=batch_size)
+
+        users = list()
+        movie1s = list()
+        movie2s = list()
+        for user in selected_users:
+            selected_inds = user_ids == user
+            movies = movie_ids[selected_inds]
+            movie_ratings = ratings[selected_inds]
+            if movies.shape[0] < 2:
+                continue
+            inds = np.arange(start=0, stop=movies.shape[0])
+            np.random.shuffle(x=inds)
+            movie1, movie2 = movies[inds[0]], movies[inds[1]]
+            rating1, rating2 = movie_ratings[inds[0]], movie_ratings[inds[1]]
+
+            users.append(user)
+            if rating1 > rating2:
+                movie1s.append(movie1)
+                movie2s.append(movie2)
+            else:
+                movie1s.append(movie2)
+                movie2s.append(movie1)
+
+        return users, movie1s, movie2s
+
+    def sample_users_and_movies(self,
+                                user_ids: np.ndarray,
+                                movie_ids: np.ndarray,
+                                ratings: np.ndarray,
+                                batch_size: int) -> \
+                                Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        dataset_size = ratings.shape[0]
+        batch_idx = np.random.randint(low=0, high=dataset_size,
+                                      size=batch_size)
+        batch_user_ids = user_ids[batch_idx]
+        batch_movie_ids = movie_ids[batch_idx]
+        batch_ratings = ratings[batch_idx]
+
+        return batch_user_ids, batch_movie_ids, batch_ratings
+
     def fit(self,
             user_embed_table: np.ndarray,
             movie_embed_table: np.ndarray,
             user_ids: np.ndarray,
             movie_ids: np.ndarray,
-            rating: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+            ratings: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """Fit the NN model to construct latent spaces for both user and movie
         by using rating prediction as the training task.
 
@@ -362,7 +410,7 @@ class latent_dnn:
         """
         user_ids = user_ids.astype(dtype=np.int32)
         movie_ids = movie_ids.astype(dtype=np.int32)
-        rating = rating.astype(dtype=np.float32)
+        ratings = ratings.astype(dtype=np.float32)
 
         with tf.Session() as sess:
             saver = tf.train.Saver()
@@ -402,50 +450,60 @@ class latent_dnn:
             rating_embed_loss_node = graph.get_tensor_by_name( \
                 "rating_pred_group/rating_embeddings_loss:0")
 
-            dataset_size = user_ids.shape[0]
-
             curr_task = "rating_pred"
             num_iters_for_curr_task = 0
             for i in range(self.num_iters_):
-                batch_idx = np.random.randint(low=0, high=dataset_size,
-                                              size=self.batch_size_)
-                batch_user_ids = user_ids[batch_idx]
-                batch_movie_ids = movie_ids[batch_idx]
-                batch_rating = rating[batch_idx]
-
-                if num_iters_for_curr_task > 1000 and curr_task == "embeddings":
+                if num_iters_for_curr_task > 1000 and curr_task == "embed_rating":
+                    curr_task = "embed_pairwise"
+                    num_iters_for_curr_task = 0
+                if num_iters_for_curr_task > 1000 and curr_task == "embed_pairwise":
                     curr_task = "rating_pred"
                     num_iters_for_curr_task = 0
                 if num_iters_for_curr_task > 1000 and curr_task == "rating_pred":
-                    curr_task = "embeddings"
+                    curr_task = "embed_rating"
                     num_iters_for_curr_task = 0
 
-                if curr_task == "embeddings":
+                if curr_task == "embed_rating":
+                    batch_user_ids, batch_movie_ids, batch_ratings = \
+                        self.sample_users_and_movies(user_ids=user_ids,
+                                                     movie_ids=movie_ids,
+                                                     ratings=ratings,
+                                                     batch_size=self.batch_size_)
                     rating_embed_task.run(feed_dict={
                         user_input_node: batch_user_ids,
                         movie_input_node: batch_movie_ids,
-                        rating_node: batch_rating,
+                        rating_node: batch_ratings,
                         concat_keep_prob: 0.7
                     })
                 elif curr_task == "rating_pred":
+                    batch_user_ids, batch_movie_ids, batch_ratings = \
+                        self.sample_users_and_movies(user_ids=user_ids,
+                                                     movie_ids=movie_ids,
+                                                     ratings=ratings,
+                                                     batch_size=self.batch_size_)
                     rating_pred_task.run(feed_dict={
                         user_input_node: batch_user_ids,
                         movie_input_node: batch_movie_ids,
-                        rating_node: batch_rating,
+                        rating_node: batch_ratings,
                         concat_keep_prob: 0.7
                     })
                 num_iters_for_curr_task += 1
 
                 if i % 100 == 0:
+                    batch_user_ids, batch_movie_ids, batch_ratings = \
+                        self.sample_users_and_movies(user_ids=user_ids,
+                                                     movie_ids=movie_ids,
+                                                     ratings=ratings,
+                                                     batch_size=self.batch_size_)
                     losses = sess.run(fetches=[rating_embed_loss_node,
                                                rating_loss_node],
                                       feed_dict={
                                           user_input_node: batch_user_ids,
                                           movie_input_node: batch_movie_ids,
-                                          rating_node: batch_rating,
+                                          rating_node: batch_ratings,
                                           concat_keep_prob: 1.0
                                       })
-                    print("Epoch", round(i*self.batch_size_/rating.shape[0], 3),
+                    print("Epoch", round(i*self.batch_size_/ratings.shape[0], 3),
                           "|task=", curr_task,
                           "|rating_embed_loss=", losses[0],
                           "|rating_loss=", losses[1])

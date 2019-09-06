@@ -73,7 +73,7 @@ def main(training_mode: bool):
                   movie_embed_table=movie_embed,
                   user_ids=um_train.row,
                   movie_ids=um_train.col,
-                  rating=um_train.data)
+                  ratings=um_train.data)
 
     user_embed, movie_embed = model.export_embeddings()
     dataset.save_dense_array(file="../data/latent_dnn_user.npz", arr=user_embed)
