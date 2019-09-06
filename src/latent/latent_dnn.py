@@ -13,15 +13,15 @@ def rating_label() -> tf.Tensor:
                               shape=[None],
                               name="rating")
 
-def movie_id_one_hot_input(num_movies: int) -> tf.Tensor:
-    with tf.name_scope("movie_input"):
+def movie_id_one_hot_input(name: str, num_movies: int) -> tf.Tensor:
+    with tf.name_scope(name):
         movie_ids = tf.placeholder(dtype=tf.int32,
                                    shape=[None],
                                    name="movie_id")
         return tf.one_hot(indices=movie_ids, depth=num_movies, name="to_one_hot")
 
-def user_id_one_hot_input(num_users: int) -> tf.Tensor:
-    with tf.name_scope("user_input"):
+def user_id_one_hot_input(name: str, num_users: int) -> tf.Tensor:
+    with tf.name_scope(name):
         user_ids = tf.placeholder(dtype=tf.int32,
                                   shape=[None],
                                   name="user_id")
@@ -97,7 +97,7 @@ def rating_pred_loss(preds: tf.Tensor, labels: tf.Tensor) -> tf.Tensor:
 def pairwise_movie_pred_loss(rating1: tf.Tensor, rating2: tf.Tensor) -> tf.Tensor:
     with tf.name_scope("pairwise_movie_pred_loss"):
         # loss is 0 iif rating1 is greater than rating2
-        loss = tf.reduce_mean(tf.maximum(x=rating2 - rating1, y=0.0))
+        loss = 10.0*tf.reduce_mean(tf.maximum(x=rating2 - rating1, y=0.0))
         return tf.identity(input=loss, name="better_than_loss")
 
 def rating_regularizer(weights: List[tf.Tensor]) -> tf.Tensor:
@@ -164,6 +164,9 @@ class latent_dnn:
         self.num_iters_ = num_iters
         self.batch_size_ = batch_size
 
+        self.num_users_ = num_users
+        self.num_movies_ = num_movies
+
         self.build_graph(num_users=num_users,
                          user_embed_size=user_embed_size,
                          num_movies=num_movies,
@@ -191,6 +194,17 @@ class latent_dnn:
 
         with tf.name_scope("rating_pred_group"):
             self.build_rating_pred_task( \
+                num_users=num_users,
+                num_movies=num_movies,
+                user_embed_table=user_embed_table,
+                movie_embed_table=movie_embed_table,
+                user_embed_size=user_embed_size,
+                movie_embed_size=movie_embed_size,
+                indirect_cause=indirect_cause,
+                learning_rate=learning_rate)
+
+        with tf.name_scope("ordered_movies_group"):
+            self.build_user_vs_pairwise_movies_task( \
                 num_users=num_users,
                 num_movies=num_movies,
                 user_embed_table=user_embed_table,
@@ -245,8 +259,8 @@ class latent_dnn:
         """Train embedding vectors by making rating predictions given the pair
         (USER_ID, MOVIE_ID).
         """
-        user_ids = user_id_one_hot_input(num_users=num_users)
-        movie_ids = movie_id_one_hot_input(num_movies=num_movies)
+        user_ids = user_id_one_hot_input(name="user_input", num_users=num_users)
+        movie_ids = movie_id_one_hot_input(name="movie_input", num_movies=num_movies)
 
         user_embed = tf.matmul(a=user_ids,
                                b=user_embed_table,
@@ -282,22 +296,22 @@ class latent_dnn:
                            var_list=rating_pred_vars,
                            name="rating_pred_task")
 
-    def build_pairwise_movie_pred_task(self,
-                                       num_users: int,
-                                       num_movies: int,
-                                       user_embed_table: tf.Tensor,
-                                       movie_embed_table: tf.Tensor,
-                                       user_embed_size: int,
-                                       movie_embed_size: int,
-                                       indirect_cause: bool,
-                                       learning_rate: float):
+    def build_user_vs_pairwise_movies_task(self,
+                                           num_users: int,
+                                           num_movies: int,
+                                           user_embed_table: tf.Tensor,
+                                           movie_embed_table: tf.Tensor,
+                                           user_embed_size: int,
+                                           movie_embed_size: int,
+                                           indirect_cause: bool,
+                                           learning_rate: float):
         """Train embedding vectors by enforcing conditional binary ordering given
         a tuple (USER_ID, MOVIE1_ID, MOVIE2_ID) where movie1 must receive higher
         rating than movie2.
         """
-        user_ids = user_id_one_hot_input(num_users=num_users)
-        movie1_ids = movie_id_one_hot_input(num_movies=num_movies)
-        movie2_ids = movie_id_one_hot_input(num_movies=num_movies)
+        user_ids = user_id_one_hot_input(name="user_input", num_users=num_users)
+        movie1_ids = movie_id_one_hot_input(name="movie1_input", num_movies=num_movies)
+        movie2_ids = movie_id_one_hot_input(name="movie2_input", num_movies=num_movies)
 
         user_embed = tf.matmul(a=user_ids,
                                b=user_embed_table,
@@ -330,19 +344,19 @@ class latent_dnn:
 
         optimizer = tf.train.AdamOptimizer(learning_rate)
         optimizer.minimize(loss=loss,
-                           var_list=[movie_embed_table],
-                           name="pairwise_movie_movie_embed_task")
+                           var_list=[user_embed_table, movie_embed_table],
+                           name="ordered_movie_embed_task1")
         optimizer.minimize(loss=loss,
-                           var_list=[movie_embed_table],
-                           name="pairwise_movie_user_embed_task")
+                           var_list=[user_embed_table],
+                           name="ordered_movie_embed_task2")
 
-    def sample_pairwise_movies_and_users(self,
-                                         num_users: int,
-                                         user_ids: np.ndarray,
-                                         movie_ids: np.ndarray,
-                                         ratings: np.ndarray,
-                                         batch_size: int) -> \
-                                         Tuple[List[int], List[int], List[int]]:
+    def sample_user_and_ordered_movie_pairs(self,
+                                            num_users: int,
+                                            user_ids: np.ndarray,
+                                            movie_ids: np.ndarray,
+                                            ratings: np.ndarray,
+                                            batch_size: int) -> \
+                                            Tuple[List[int], List[int], List[int]]:
         selected_users = np.random.randint(low=0, high=num_users, size=batch_size)
 
         users = list()
@@ -355,7 +369,7 @@ class latent_dnn:
             if movies.shape[0] < 2:
                 continue
             inds = np.arange(start=0, stop=movies.shape[0])
-            np.random.shuffle(x=inds)
+            np.random.shuffle(inds)
             movie1, movie2 = movies[inds[0]], movies[inds[1]]
             rating1, rating2 = movie_ratings[inds[0]], movie_ratings[inds[1]]
 
@@ -440,15 +454,32 @@ class latent_dnn:
             concat_keep_prob = graph.get_tensor_by_name( \
                 "rating_pred_group/concat/keep_prob:0")
 
+            ordered_user_input_node = graph.get_tensor_by_name( \
+                "ordered_movies_group/user_input/user_id:0")
+            ordered_movie1_input_node = graph.get_tensor_by_name( \
+                "ordered_movies_group/movie1_input/movie_id:0")
+            ordered_movie2_input_node = graph.get_tensor_by_name( \
+                "ordered_movies_group/movie2_input/movie_id:0")
+            ordered_movies_keep_prob = graph.get_tensor_by_name( \
+                "ordered_movies_group/concat/keep_prob:0")
+            ordered_movies_keep_prob2 = graph.get_tensor_by_name( \
+                "ordered_movies_group/concat_1/keep_prob:0")
+
             rating_embed_task = graph.get_operation_by_name( \
                 "rating_pred_group/rating_embeddings_task")
             rating_pred_task = graph.get_operation_by_name( \
                 "rating_pred_group/rating_pred_task")
+            ordered_movie_embed_task1 = graph.get_operation_by_name( \
+                "ordered_movies_group/ordered_movie_embed_task1")
+            ordered_movie_embed_task2 = graph.get_operation_by_name( \
+                "ordered_movies_group/ordered_movie_embed_task2")
 
             rating_loss_node = graph.get_tensor_by_name( \
                 "rating_pred_group/rating_loss:0")
             rating_embed_loss_node = graph.get_tensor_by_name( \
                 "rating_pred_group/rating_embeddings_loss:0")
+            better_than_loss_node = graph.get_tensor_by_name( \
+                "ordered_movies_group/pairwise_movie_pred_loss/better_than_loss:0")
 
             curr_task = "rating_pred"
             num_iters_for_curr_task = 0
@@ -475,6 +506,21 @@ class latent_dnn:
                         rating_node: batch_ratings,
                         concat_keep_prob: 0.7
                     })
+                elif curr_task == "embed_pairwise":
+                    batch_user_ids, batch_movie1_ids, batch_movie2_ids = \
+                        self.sample_user_and_ordered_movie_pairs( \
+                            num_users=self.num_users_,
+                            user_ids=user_ids,
+                            movie_ids=movie_ids,
+                            ratings=ratings,
+                            batch_size=self.batch_size_)
+                    ordered_movie_embed_task1.run(feed_dict={
+                        ordered_user_input_node: batch_user_ids,
+                        ordered_movie1_input_node: batch_movie1_ids,
+                        ordered_movie2_input_node: batch_movie2_ids,
+                        ordered_movies_keep_prob: 1.0,
+                        ordered_movies_keep_prob2: 1.0
+                    })
                 elif curr_task == "rating_pred":
                     batch_user_ids, batch_movie_ids, batch_ratings = \
                         self.sample_users_and_movies(user_ids=user_ids,
@@ -495,18 +541,32 @@ class latent_dnn:
                                                      movie_ids=movie_ids,
                                                      ratings=ratings,
                                                      batch_size=self.batch_size_)
+                    batch_user1_ids, batch_movie1_ids, batch_movie2_ids = \
+                        self.sample_user_and_ordered_movie_pairs( \
+                            num_users=self.num_users_,
+                            user_ids=user_ids,
+                            movie_ids=movie_ids,
+                            ratings=ratings,
+                            batch_size=self.batch_size_)
                     losses = sess.run(fetches=[rating_embed_loss_node,
-                                               rating_loss_node],
+                                               rating_loss_node,
+                                               better_than_loss_node],
                                       feed_dict={
                                           user_input_node: batch_user_ids,
                                           movie_input_node: batch_movie_ids,
                                           rating_node: batch_ratings,
-                                          concat_keep_prob: 1.0
+                                          concat_keep_prob: 1.0,
+                                          ordered_user_input_node: batch_user_ids,
+                                          ordered_movie1_input_node: batch_movie1_ids,
+                                          ordered_movie2_input_node: batch_movie2_ids,
+                                          ordered_movies_keep_prob: 1.0,
+                                          ordered_movies_keep_prob2: 1.0
                                       })
                     print("Epoch", round(i*self.batch_size_/ratings.shape[0], 3),
                           "|task=", curr_task,
                           "|rating_embed_loss=", losses[0],
-                          "|rating_loss=", losses[1])
+                          "|rating_loss=", losses[1],
+                          "|bt_loss=", losses[2])
 
             print("Training complete. ")
             saver.save(sess=sess, save_path=self.model_meta_path_)
