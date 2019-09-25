@@ -5,41 +5,48 @@ import math as m
 from hparams import MOVIE_EMBEDDINGS_SIZE
 from hparams import USER_EMBEDDINGS_SIZE
 
+
 def label():
     with tf.name_scope("label"):
-        return tf.placeholder(dtype=tf.float32, 
-                              shape=[None], 
-                              name="rating")
+        return tf.compat.v1.placeholder(dtype=tf.float32,
+                                        shape=[None],
+                                        name="rating")
+
 
 def embeddings_input(embedding_name: str, embed_size: int):
     with tf.name_scope(embedding_name):
-        return tf.placeholder(dtype=tf.float32, 
-                              shape=[None, embed_size], 
-                              name="input")
+        return tf.compat.v1.placeholder(dtype=tf.float32,
+                                        shape=[None, embed_size],
+                                        name="input")
+
 
 def keep_prob(name: str):
     with tf.name_scope(name):
-        return tf.placeholder(tf.float32, name="keep_prob")
+        return tf.compat.v1.placeholder(tf.float32, name="keep_prob")
+
 
 def nn_dense_layer(name: str, input, input_size: int, output_size: int):
     with tf.name_scope(name):
-        weights = tf.Variable(tf.truncated_normal(shape=[input_size, output_size],
-                                                  stddev=1.0/m.sqrt(float(input_size))),
+        weights = tf.Variable(tf.compat.v1.truncated_normal(shape=[input_size, output_size],
+                                                            stddev=1.0/m.sqrt(float(input_size))),
                               name="w")
         biases = tf.Variable(tf.zeros(shape=[output_size]), name="b")
         return tf.nn.relu(tf.matmul(input, weights) + biases, name="layer_output")
 
+
 def prediction(input, input_size: int):
     preds = nn_dense_layer(name="pred",
-                          input=input,
-                          input_size=input_size,
-                          output_size=1)[:, 0]
+                           input=input,
+                           input_size=input_size,
+                           output_size=1)[:, 0]
     return tf.identity(input=preds, name="rating_preds")
+
 
 def mse_loss(prediction, label):
     with tf.name_scope("loss"):
         loss = tf.losses.mean_squared_error(label, prediction)
         return tf.identity(input=loss, name="mse_loss")
+
 
 class dnn_on_latent_space:
     def __init__(self,
@@ -72,6 +79,8 @@ class dnn_on_latent_space:
             learning_rate {float} -- The velocity of each gradient descent step.
                 (default: {0.001})
         """
+        tf.compat.v1.disable_eager_execution()
+
         # Constant hyper-params.
         self.MOVIE_EMBEDDINGS_TRANSFORMED_SIZE = 10
         self.USER_EMBEDDINGS_TRANSFORMED_SIZE = 15
@@ -96,11 +105,11 @@ class dnn_on_latent_space:
                     learning_rate: float):
         """Build an NN graph.
         """
-        tf.reset_default_graph()
+        tf.compat.v1.reset_default_graph()
 
-        user_embeddings = embeddings_input(embedding_name="user_embeddings", 
+        user_embeddings = embeddings_input(embedding_name="user_embeddings",
                                            embed_size=user_embed_size)
-        movie_embeddings = embeddings_input(embedding_name="movie_embeddings", 
+        movie_embeddings = embeddings_input(embedding_name="movie_embeddings",
                                             embed_size=movie_embed_size)
 
         if embedding_transform:
@@ -117,8 +126,8 @@ class dnn_on_latent_space:
 
         concat_features = tf.concat(values=[user_embeddings, movie_embeddings],
                                     axis=1, name="concat_features")
-        concat_features = tf.nn.dropout(x=concat_features,
-                                        keep_prob=keep_prob(name="concat"))
+        concat_features = tf.compat.v1.nn.dropout(x=concat_features,
+                                                  keep_prob=keep_prob(name="concat"))
 
         compress_size = (user_embed_size + movie_embed_size)//2
         compress = nn_dense_layer(name="compress",
@@ -130,13 +139,14 @@ class dnn_on_latent_space:
         rating_label = label()
         loss = mse_loss(rating_pred, rating_label)
 
-        optimizer = tf.train.AdamOptimizer(learning_rate)
+        optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate)
         global_step = tf.Variable(0, name="global_step", trainable=False)
-        optimizer.minimize(loss, global_step=global_step, name="optimizer_node")
+        optimizer.minimize(loss, global_step=global_step,
+                           name="optimizer_node")
 
     def fit(self,
-            user_embed: np.ndarray, 
-            movie_embed: np.ndarray, 
+            user_embed: np.ndarray,
+            movie_embed: np.ndarray,
             rating: np.ndarray) -> None:
         """Fit the NN model to the user-movie embedding pairs and ratings.
 
@@ -155,18 +165,20 @@ class dnn_on_latent_space:
         movie_embed = movie_embed.astype(dtype=np.float32)
         rating = rating.astype(dtype=np.float32)
 
-        saver = tf.train.Saver()
+        saver = tf.compat.v1.train.Saver()
 
-        with tf.Session() as sess:
+        with tf.compat.v1.Session() as sess:
             if self.reset_and_train_:
-                sess.run(tf.global_variables_initializer())
+                sess.run(tf.compat.v1.global_variables_initializer())
             else:
                 saver.restore(sess, self.model_meta_path_)
 
-            graph = tf.get_default_graph()
+            graph = tf.compat.v1.get_default_graph()
 
-            user_embed_node = graph.get_tensor_by_name("user_embeddings/input:0")
-            movie_embed_node = graph.get_tensor_by_name("movie_embeddings/input:0")
+            user_embed_node = graph.get_tensor_by_name(
+                "user_embeddings/input:0")
+            movie_embed_node = graph.get_tensor_by_name(
+                "movie_embeddings/input:0")
             rating_node = graph.get_tensor_by_name("label/rating:0")
             concat_keep_prob = graph.get_tensor_by_name("concat/keep_prob:0")
 
@@ -221,14 +233,16 @@ class dnn_on_latent_space:
         user_embed = user_embed.astype(dtype=np.float32)
         movie_embed = movie_embed.astype(dtype=np.float32)
 
-        saver = tf.train.Saver()
+        saver = tf.compat.v1.train.Saver()
 
-        with tf.Session() as sess:
+        with tf.compat.v1.Session() as sess:
             saver.restore(sess, self.model_meta_path_)
-            graph = tf.get_default_graph()
+            graph = tf.compat.v1.get_default_graph()
 
-            user_embed_node = graph.get_tensor_by_name("user_embeddings/input:0")
-            movie_embed_node = graph.get_tensor_by_name("movie_embeddings/input:0")
+            user_embed_node = graph.get_tensor_by_name(
+                "user_embeddings/input:0")
+            movie_embed_node = graph.get_tensor_by_name(
+                "movie_embeddings/input:0")
             rating_pred_node = graph.get_tensor_by_name("rating_preds:0")
             concat_keep_prob = graph.get_tensor_by_name("concat/keep_prob:0")
 
