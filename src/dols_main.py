@@ -69,7 +69,7 @@ def main(training_mode: bool):
                             num_movies=num_movies,
                             movie_embed_size=MOVIE_EMBEDDINGS_SIZE,
                             indirect_cause=True,
-                            num_iters=100000,
+                            num_iters=1,
                             reset_and_train=True)
     if training_mode:
         model.fit(user_embed_table=user_embed,
@@ -79,6 +79,7 @@ def main(training_mode: bool):
                   ratings=um_train.data)
 
     user_embed, movie_embed = model.export_embeddings()
+    print(movie_embed.shape)
     dataset.save_dense_array(
         file="../data/latent_dnn_user.npz", arr=user_embed)
     dataset.save_dense_array(

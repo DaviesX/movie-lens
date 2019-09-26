@@ -4,121 +4,44 @@ import numpy as np
 import tensorflow as tf
 import math as m
 
+from utils import nnutils
 from hparams import MOVIE_EMBEDDINGS_SIZE
 from hparams import USER_EMBEDDINGS_SIZE
 
 
-def rating_label() -> tf.Tensor:
-    with tf.name_scope("label"):
-        return tf.compat.v1.placeholder(dtype=tf.float32,
-                              shape=[None],
-                              name="rating")
+@tf.function
+def rating_prediction_loss(preds: np.ndarray, labels: np.ndarray) -> float:
+    """[summary]
 
-def movie_id_one_hot_input(name: str, num_movies: int) -> tf.Tensor:
-    with tf.name_scope(name):
-        movie_ids = tf.compat.v1.placeholder(dtype=tf.int32,
-                                   shape=[None],
-                                   name="movie_id")
-        return tf.one_hot(indices=movie_ids, depth=num_movies, name="to_one_hot")
+    Arguments:
+        preds {np.ndarray} -- [description]
+        labels {np.ndarray} -- [description]
 
-def user_id_one_hot_input(name: str, num_users: int) -> tf.Tensor:
-    with tf.name_scope(name):
-        user_ids = tf.compat.v1.placeholder(dtype=tf.int32,
-                                  shape=[None],
-                                  name="user_id")
-        return tf.one_hot(indices=user_ids, depth=num_users, name="to_one_hot")
+    Returns:
+        np.ndarray -- [description]
+    """
+    return tf.metrics.mean_squared_error(labels, preds)
 
-def embeddings_table(name: str,
-                     num_vecs: int,
-                     latent_size: int) -> tf.Tensor:
-    with tf.compat.v1.variable_scope(name, reuse=tf.compat.v1.AUTO_REUSE):
-        embed_table = tf.compat.v1.get_variable( \
-            name="embed_table",
-            initializer=tf.compat.v1.truncated_normal(shape=[num_vecs, latent_size],
-                                            stddev=0.01))
-        return embed_table
 
-def keep_prob(name: str):
-    with tf.name_scope(name):
-        return tf.compat.v1.placeholder(tf.float32, name="keep_prob")
+@tf.function
+def regularizer_loss(weights: List[tf.Tensor], alpha=0.04) -> float:
+    """[summary]
 
-def nn_dense_layer(name: str,
-                   inputs: tf.Tensor,
-                   input_size: int,
-                   output_size: int,
-                   act_func: str,
-                   vars: List[tf.Tensor],
-                   reg_vars: List[tf.Tensor]) -> tf.Tensor:
-    with tf.compat.v1.variable_scope(name, reuse=tf.compat.v1.AUTO_REUSE):
-        weights = tf.compat.v1.get_variable( \
-            name="weights",
-            initializer=tf.compat.v1.truncated_normal(shape=[input_size, output_size],
-                                            stddev=1.0/m.sqrt(float(input_size))))
-        biases = tf.compat.v1.get_variable(name="biases",
-                                 initializer=tf.zeros(shape=[output_size]))
+    Arguments:
+        weights {List[tf.Tensor]} -- [description]
 
-        reg_vars.append(weights)
-        vars.append(weights)
-        vars.append(biases)
+    Keyword Arguments:
+        alpha {float} -- [description] (default: {0.04})
 
-        lin_t = tf.matmul(a=inputs, b=weights, name="linear_trans")
-        features = tf.add(x=lin_t, y=biases, name="translate")
+    Returns:
+        float -- [description]
+    """
+    regularizer = tf.keras.regularizers.l2(l=alpha)
+    loss = 0
+    for weight in weights:
+        loss += regularizer(weight)
+    return loss
 
-        if act_func is None:
-            return features
-        elif act_func == "relu":
-            return tf.nn.relu(features=features, name="layer_output")
-        elif act_func == "tanh":
-            return tf.tanh(x=features, name="layer_output")
-        else:
-            raise "Unknown activaion function " + act_func
-
-def pred_rating(inputs: tf.Tensor,
-                input_size: int,
-                vars: List[tf.Tensor],
-                reg_vars: List[tf.Tensor]) -> tf.Tensor:
-    preds = nn_dense_layer(name="prediction",
-                           inputs=inputs,
-                           input_size=input_size,
-                           output_size=1,
-                           act_func="tanh",
-                           vars=vars,
-                           reg_vars=reg_vars)
-    preds = 2.5*(preds + 1)
-    preds = tf.reshape(tensor=preds,
-                       shape=[tf.shape(input=preds, name="pred_shape")[0]],
-                       name="rating_preds")
-    return preds
-
-def rating_pred_loss(preds: tf.Tensor, labels: tf.Tensor) -> tf.Tensor:
-    with tf.name_scope("rating_pred_loss"):
-        loss = tf.losses.mean_squared_error(labels, preds)
-        return tf.identity(input=loss, name="mse")
-
-def pairwise_movie_pred_loss(rating1: tf.Tensor, rating2: tf.Tensor) -> tf.Tensor:
-    with tf.name_scope("pairwise_movie_pred_loss"):
-        # loss is 0 iif rating1 is greater than rating2
-        loss = 10.0*tf.reduce_mean(tf.maximum(x=rating2 - rating1, y=0.0))
-        return tf.identity(input=loss, name="better_than_loss")
-
-def rating_regularizer(weights: List[tf.Tensor]) -> tf.Tensor:
-    with tf.name_scope("rating_regularizer"):
-        loss = None
-        for w in weights:
-            if loss is None:
-                loss = tf.reduce_mean(input_tensor=w*w)
-            else:
-                loss += tf.reduce_mean(input_tensor=w*w)
-        return loss
-
-def embeddings_unit_norm_loss(name: str, embeddings: tf.Tensor) -> tf.Tensor:
-    with tf.name_scope(name):
-        norm = tf.sqrt(x=tf.reduce_sum(input_tensor=embeddings*embeddings,
-                                       axis=1),
-                       name="embedding_norm")
-        len_diffs = 1.0 - norm
-        errs = len_diffs*len_diffs
-        return tf.reduce_mean(input_tensor=errs, name="err")
 
 class latent_dnn:
     def __init__(self,
@@ -157,8 +80,6 @@ class latent_dnn:
             learning_rate {float} -- The velocity of each gradient descent
                 step. (default: {0.001})
         """
-        tf.compat.v1.disable_eager_execution()
-
         # Configurable hyper-params
         self.user_embed_size_ = user_embed_size
         self.movie_embed_size_ = movie_embed_size
@@ -170,12 +91,55 @@ class latent_dnn:
         self.num_users_ = num_users
         self.num_movies_ = num_movies
 
-        self.build_graph(num_users=num_users,
-                         user_embed_size=user_embed_size,
-                         num_movies=num_movies,
-                         movie_embed_size=movie_embed_size,
-                         indirect_cause=indirect_cause,
-                         learning_rate=learning_rate)
+        # Model varibles
+        self.user_embed_table_ = tf.Variable(initial_value=tf.ones(shape=()))
+        self.movie_embed_table_ = None
+
+    @tf.function
+    def predict_ratings(self,
+                        user_embed: tf.Tensor,
+                        movie_embed: tf.Tensor,
+                        user_embed_size: int,
+                        movie_embed_size: int,
+                        indirect_cause: bool,
+                        drop_prob: float,
+                        pred_vars: List[tf.Tensor],
+                        reg_vars: List[tf.Tensor]) -> np.ndarray:
+        """[summary]
+
+        Arguments:
+            user_embed {tf.Tensor} -- [description]
+            movie_embed {tf.Tensor} -- [description]
+            user_embed_size {int} -- [description]
+            movie_embed_size {int} -- [description]
+            indirect_cause {bool} -- [description]
+            drop_prob {float} -- [description]
+            pred_vars {List[tf.Tensor]} -- [description]
+            reg_vars {List[tf.Tensor]} -- [description]
+
+        Returns:
+            np.ndarray -- [description]
+        """
+        concat_features = tf.concat(values=[user_embed, movie_embed],
+                                    axis=1, name="concat_features")
+        concat_features = tf.nn.dropout(x=concat_features, rate=drop_prob)
+
+        if indirect_cause:
+            compress_size = (user_embed_size + movie_embed_size)//2
+            features = transform_inputs(inputs=concat_features,
+                                        input_size=user_embed_size + movie_embed_size,
+                                        output_size=compress_size,
+                                        act_func="tanh",
+                                        all_vars=pred_vars,
+                                        reg_vars=reg_vars)
+            feature_size = compress_size
+        else:
+            features = concat_features
+            feature_size = user_embed_size + movie_embed_size
+
+        transform = nnutils.transform(input_size=features, output_size=1)
+        preds = 2.5*(transform(features) + 1)
+        return preds[:, 0]
 
     def build_graph(self,
                     num_users: int,
@@ -186,58 +150,21 @@ class latent_dnn:
                     learning_rate: float):
         """Build a multi-task embeddings model.
         """
-        tf.compat.v1.reset_default_graph()
-
-        user_embed_table = embeddings_table(name="user_embed",
-                                            num_vecs=num_users,
-                                            latent_size=user_embed_size)
-        movie_embed_table = embeddings_table(name="movie_embed",
-                                             num_vecs=num_movies,
-                                             latent_size=movie_embed_size)
+        self.user_embed_table_ = tf.Variable(
+            shape=[num_users, user_embed_size])
+        self.movie_embed_table_ = tf.Variable(
+            shape=[num_movies, movie_embed_size])
 
         with tf.name_scope("rating_pred_group"):
-            self.build_rating_pred_task( \
+            self.build_rating_pred_task(
                 num_users=num_users,
                 num_movies=num_movies,
-                user_embed_table=user_embed_table,
-                movie_embed_table=movie_embed_table,
+                user_embed_table=self.user_embed_table_,
+                movie_embed_table=self.movie_embed_table_,
                 user_embed_size=user_embed_size,
                 movie_embed_size=movie_embed_size,
                 indirect_cause=indirect_cause,
                 learning_rate=learning_rate)
-
-    def build_predict_rating(self,
-                             user_embed: tf.Tensor,
-                             movie_embed: tf.Tensor,
-                             user_embed_size: int,
-                             movie_embed_size: int,
-                             indirect_cause: bool,
-                             pred_vars: List[tf.Tensor],
-                             reg_vars: List[tf.Tensor]) -> tf.Tensor:
-        concat_features = tf.concat(values=[user_embed, movie_embed],
-                                    axis=1, name="concat_features")
-        concat_features = tf.compat.v1.nn.dropout(x=concat_features,
-                                        keep_prob=keep_prob(name="concat"))
-
-        if indirect_cause:
-            compress_size = (user_embed_size + movie_embed_size)//2
-            features = nn_dense_layer(name="compress",
-                                      inputs=concat_features,
-                                      input_size=user_embed_size + movie_embed_size,
-                                      output_size=compress_size,
-                                      act_func="tanh",
-                                      vars=pred_vars,
-                                      reg_vars=reg_vars)
-            feature_size = compress_size
-        else:
-            features = concat_features
-            feature_size = user_embed_size + movie_embed_size
-
-        rating_preds = pred_rating(inputs=features,
-                                   input_size=feature_size,
-                                   vars=pred_vars,
-                                   reg_vars=reg_vars)
-        return rating_preds
 
     def build_rating_pred_task(self,
                                num_users: int,
@@ -251,8 +178,10 @@ class latent_dnn:
         """Train embedding vectors by making rating predictions given the pair
         (USER_ID, MOVIE_ID).
         """
-        user_ids = user_id_one_hot_input(name="user_input", num_users=num_users)
-        movie_ids = movie_id_one_hot_input(name="movie_input", num_movies=num_movies)
+        user_ids = user_id_one_hot_input(
+            name="user_input", num_users=num_users)
+        movie_ids = movie_id_one_hot_input(
+            name="movie_input", num_movies=num_movies)
 
         user_embed = tf.matmul(a=user_ids,
                                b=user_embed_table,
@@ -274,8 +203,8 @@ class latent_dnn:
 
         pred_loss = rating_pred_loss(preds=rating_preds,
                                      labels=rating_label())
-        rating_loss = tf.identity(input=pred_loss + \
-                                        rating_regularizer(weights=reg_vars),
+        rating_loss = tf.identity(input=pred_loss +
+                                  rating_regularizer(weights=reg_vars),
                                   name="rating_loss")
         embeddings_loss = tf.identity(input=pred_loss,
                                       name="rating_embeddings_loss")
@@ -293,7 +222,7 @@ class latent_dnn:
                                 movie_ids: np.ndarray,
                                 ratings: np.ndarray,
                                 batch_size: int) -> \
-                                Tuple[np.ndarray, np.ndarray, np.ndarray]:
+            Tuple[np.ndarray, np.ndarray, np.ndarray]:
         dataset_size = ratings.shape[0]
         batch_idx = np.random.randint(low=0, high=dataset_size,
                                       size=batch_size)
@@ -350,23 +279,23 @@ class latent_dnn:
                 sess.run(tf.compat.v1.assign(ref=table,
                                    value=movie_embed_table.astype(dtype=np.float32)))
             """
-            user_input_node = graph.get_tensor_by_name( \
+            user_input_node = graph.get_tensor_by_name(
                 "rating_pred_group/user_input/user_id:0")
-            movie_input_node = graph.get_tensor_by_name( \
+            movie_input_node = graph.get_tensor_by_name(
                 "rating_pred_group/movie_input/movie_id:0")
-            rating_node = graph.get_tensor_by_name( \
+            rating_node = graph.get_tensor_by_name(
                 "rating_pred_group/label/rating:0")
-            concat_keep_prob = graph.get_tensor_by_name( \
+            concat_keep_prob = graph.get_tensor_by_name(
                 "rating_pred_group/concat/keep_prob:0")
 
-            rating_embed_task = graph.get_operation_by_name( \
+            rating_embed_task = graph.get_operation_by_name(
                 "rating_pred_group/rating_embeddings_task")
-            rating_pred_task = graph.get_operation_by_name( \
+            rating_pred_task = graph.get_operation_by_name(
                 "rating_pred_group/rating_pred_task")
 
-            rating_loss_node = graph.get_tensor_by_name( \
+            rating_loss_node = graph.get_tensor_by_name(
                 "rating_pred_group/rating_loss:0")
-            rating_embed_loss_node = graph.get_tensor_by_name( \
+            rating_embed_loss_node = graph.get_tensor_by_name(
                 "rating_pred_group/rating_embeddings_loss:0")
 
             curr_task = "rating_pred"
@@ -418,7 +347,7 @@ class latent_dnn:
                                           movie_input_node: batch_movie_ids,
                                           rating_node: batch_ratings,
                                           concat_keep_prob: 1.0
-                                      })
+                    })
                     print("Epoch", round(i*self.batch_size_/ratings.shape[0], 3),
                           "|task=", curr_task,
                           "|rating_embed_loss=", losses[0],
@@ -435,18 +364,7 @@ class latent_dnn:
             Tuple[np.ndarray, np.ndarray] -- A tuple of user embeddings and
                 movie embeddings
         """
-        saver = tf.compat.v1.train.Saver()
-
-        with tf.compat.v1.Session() as sess:
-            saver.restore(sess, self.model_meta_path_)
-
-            graph = tf.compat.v1.get_default_graph()
-
-            user_embed_table_node = graph.get_tensor_by_name("user_embed/embed_table:0")
-            movie_embed_table_node = graph.get_tensor_by_name("movie_embed/embed_table:0")
-
-            return user_embed_table_node.eval(), movie_embed_table_node.eval()
-
+        return self.user_embed_table_.eval(), self.movie_embed_table_.eval()
 
     def predict_ratings(self,
                         user_ids: np.ndarray,
@@ -474,13 +392,13 @@ class latent_dnn:
 
             graph = tf.compat.v1.get_default_graph()
 
-            user_input_node = graph.get_tensor_by_name( \
+            user_input_node = graph.get_tensor_by_name(
                 "rating_pred_group/user_input/user_id:0")
-            movie_input_node = graph.get_tensor_by_name( \
+            movie_input_node = graph.get_tensor_by_name(
                 "rating_pred_group/movie_input/movie_id:0")
-            rating_preds_node = graph.get_tensor_by_name( \
+            rating_preds_node = graph.get_tensor_by_name(
                 "rating_pred_group/rating_preds:0")
-            concat_keep_prob = graph.get_tensor_by_name( \
+            concat_keep_prob = graph.get_tensor_by_name(
                 "rating_pred_group/concat/keep_prob:0")
 
             dataset_size = user_ids.shape[0]
