@@ -49,6 +49,8 @@ def load_user_movie_rating(file_name: str) -> Tuple[coo_matrix, np.ndarray, np.n
     um = coo_matrix((ratings, (user_row, movie_col)),
                     shape=(num_users, num_movies),
                     dtype=np.float32)
+    um.row = um.row.astype(np.int32)
+    um.col = um.col.astype(np.int32)
 
     # Create mappings from table row and column indices to user ID and movie ID, respectively.
     row2uid = np.arange(start=1, stop=num_users + 1, dtype=np.int32)
@@ -108,8 +110,14 @@ def train_and_validation_split(um: coo_matrix,
                            (um.row[inds[:train_upper_bound]],
                             um.col[inds[:train_upper_bound]])),
                            shape=um.shape)
+    um_train.row = um_train.row.astype(np.int32)
+    um_train.col = um_train.col.astype(np.int32)
+
     um_valid = coo_matrix((um.data[inds[train_upper_bound:]],
                            (um.row[inds[train_upper_bound:]],
                             um.col[inds[train_upper_bound:]])),
                            shape=um.shape)
+    um_valid.row = um_valid.row.astype(np.int32)
+    um_valid.col = um_valid.col.astype(np.int32)
+
     return um_train, um_valid
