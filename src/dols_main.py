@@ -65,16 +65,16 @@ def main(training_mode: bool):
     num_movies = col2mid.shape[0]
     model = ldnn.latent_dnn(model_meta_path="../meta/latent_dnn.ckpt",
                             num_users=num_users,
-                            user_embed_size=USER_EMBEDDINGS_SIZE,
                             num_movies=num_movies,
+                            user_embed_size=USER_EMBEDDINGS_SIZE,
                             movie_embed_size=MOVIE_EMBEDDINGS_SIZE,
+                            init_user_embed_table=user_embed,
+                            init_movie_embed_table=movie_embed,
                             indirect_cause=True,
-                            num_iters=1,
+                            num_iters=100000,
                             reset_and_train=True)
     if training_mode:
-        model.fit(user_embed_table=user_embed,
-                  movie_embed_table=movie_embed,
-                  user_ids=um_train.row,
+        model.fit(user_ids=um_train.row,
                   movie_ids=um_train.col,
                   ratings=um_train.data)
 

@@ -13,7 +13,8 @@ class transform:
         """
         self.weights_ = tf.Variable(
             initial_value=tf.random.truncated_normal(shape=(output_size, input_size)))
-        self.biases_ = tf.Variable(initial_value=tf.zeros(shape=(output_size)))
+        self.biases_ = tf.Variable(
+            initial_value=tf.zeros(shape=(output_size, 1)))
 
     @tf.function
     def __call__(self, x: np.ndarray, act_fn="tanh") -> np.ndarray:
@@ -28,13 +29,13 @@ class transform:
         Returns:
             np.ndarray -- [description]
         """
-        t = self.weights_ * x + self.biases_
+        t_x = tf.matmul(self.weights_, x) + self.biases_
         if act_fn == "tanh":
-            return tf.tanh(t)
+            return tf.tanh(t_x)
         elif act_fn == "relu":
-            return tf.nn.leaky_relu(t)
+            return tf.nn.leaky_relu(t_x)
         else:
-            return t
+            return t_x
 
     def weights(self) -> tf.Tensor:
         """[summary]
