@@ -145,7 +145,7 @@ class dnn_on_latent_space:
                     user_embed=batch_user_embed, movie_embed=batch_movie_embed, drop_prob=0.3)
                 l_ratings = tf.metrics.mean_squared_error(
                     y_true=batch_ratings, y_pred=ratings_hat)
-                # l_reg = nnutils.regularizer_loss(weights=self.regi_vars_)
+                l_reg = nnutils.regularizer_loss(weights=self.regi_vars_)
                 loss = l_ratings + l_reg
 
                 if i % 1000 == 0:

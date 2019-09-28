@@ -71,7 +71,7 @@ def main(training_mode: bool):
                             init_user_embed_table=user_embed,
                             init_movie_embed_table=movie_embed,
                             indirect_cause=True,
-                            num_iters=100000,
+                            num_iters=50000,
                             reset_and_train=True)
     if training_mode:
         model.fit(user_ids=um_train.row,
@@ -104,7 +104,7 @@ def main(training_mode: bool):
         user_embed_size=USER_EMBEDDINGS_SIZE,
         movie_embed_size=MOVIE_EMBEDDINGS_SIZE,
         reset_and_train=True,
-        num_iters=100000)
+        num_iters=50000)
 
     if training_mode:
         model.fit(user_embed=user_embed[um_train.row],

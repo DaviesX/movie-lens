@@ -56,7 +56,6 @@ class transform:
         return self.biases_
 
 
-@tf.function
 def regularizer_loss(weights: List[tf.Tensor], alpha=0.01) -> float:
     """[summary]
 

@@ -198,7 +198,7 @@ class latent_dnn:
             if curr_task == "embed_rating":
                 with tf.GradientTape() as tape:
                     ratings_hat = self.predict_ratings(
-                        user_ids=batch_user_ids, movie_ids=batch_movie_ids, drop_prob=0)
+                        user_ids=batch_user_ids, movie_ids=batch_movie_ids, drop_prob=0.3)
                     l_ratings = tf.metrics.mean_squared_error(
                         y_true=batch_ratings, y_pred=ratings_hat)
                     loss = l_ratings
