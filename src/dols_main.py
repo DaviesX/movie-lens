@@ -97,14 +97,14 @@ def main(training_mode: bool):
     # Evaluate by the MSE objective over the embeddings.
     print("train_rmse=", eval_rmse.rmse(um_train.data, pred_ratings_train))
     print("valid_rmse=", eval_rmse.rmse(um_valid.data, pred_ratings_valid))
- 
+
     # Train a missing-value completion model over the latent vectors.
     model = dols.dnn_on_latent_space(
         model_meta_path="../meta/dols.ckpt",
         user_embed_size=USER_EMBEDDINGS_SIZE,
         movie_embed_size=MOVIE_EMBEDDINGS_SIZE,
         reset_and_train=True,
-        num_iters=200000)
+        num_iters=100000)
 
     if training_mode:
         model.fit(user_embed=user_embed[um_train.row],

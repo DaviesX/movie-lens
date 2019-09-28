@@ -24,6 +24,7 @@ def sample_batch(user_embed: np.ndarray,
 
     return batch_user_embed, batch_movie_embed, batch_ratings
 
+
 class dnn_on_latent_space:
     def __init__(self,
                  model_meta_path: str,
@@ -62,7 +63,7 @@ class dnn_on_latent_space:
         self.num_iters_ = num_iters
         self.batch_size_ = batch_size
         self.learning_rate_ = learning_rate
-        
+
         # Model varibles
         self.ratings_t1i_ = nnutils.transform(input_size=user_embed_size + movie_embed_size,
                                               output_size=(user_embed_size + movie_embed_size)//2)
@@ -70,12 +71,13 @@ class dnn_on_latent_space:
             user_embed_size + movie_embed_size)//2, output_size=1)
 
         # Variable sets
+        self.regi_vars_ = [self.ratings_t1i_.weights()]
         self.modeli_vars_ = list(nnutils.collect_transform_vars(
             [self.ratings_t1i_, self.ratings_t2i_]).values())
 
         # Create model checkpoint
         self.ckpt_ = tf.train.Checkpoint(**nnutils.collect_transform_vars(
-            [self.ratings_t1i_, self.ratings_t2i_]))   
+            [self.ratings_t1i_, self.ratings_t2i_]))
         if not reset_and_train:
             status = self.ckpt_.restore(
                 tf.train.latest_checkpoint(self.model_meta_path_))
@@ -102,11 +104,9 @@ class dnn_on_latent_space:
         Returns:
             np.ndarray -- [description]
         """
-        user_embed = tf.transpose(a=user_embed)
-        movie_embed = tf.transpose(a=movie_embed)
-
-        concat_features = tf.concat(values=[user_embed, movie_embed], axis=0)
+        concat_features = tf.concat(values=[user_embed, movie_embed], axis=1)
         concat_features = tf.nn.dropout(x=concat_features, rate=drop_prob)
+        concat_features = tf.transpose(a=concat_features)
 
         features = self.ratings_t1i_(x=concat_features, act_fn="tanh")
         preds = 2.5 * \
@@ -143,11 +143,15 @@ class dnn_on_latent_space:
             with tf.GradientTape() as tape:
                 ratings_hat = self.predict(
                     user_embed=batch_user_embed, movie_embed=batch_movie_embed, drop_prob=0.3)
-                loss = tf.metrics.mean_squared_error(
+                l_ratings = tf.metrics.mean_squared_error(
                     y_true=batch_ratings, y_pred=ratings_hat)
+                # l_reg = nnutils.regularizer_loss(weights=self.regi_vars_)
+                loss = l_ratings + l_reg
 
                 if i % 1000 == 0:
                     print("Epoch", round(i*self.batch_size_/ratings.shape[0], 3),
+                          "|l_ratings=", float(l_ratings),
+                          "|l_reg=", float(l_reg),
                           "|loss=", float(loss))
 
                 grads = tape.gradient(target=loss, sources=self.modeli_vars_)

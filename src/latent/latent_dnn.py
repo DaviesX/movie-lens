@@ -5,10 +5,10 @@ import tensorflow as tf
 from utils import nnutils
 
 
-def sample_users_and_movies(user_ids: np.ndarray,
-                            movie_ids: np.ndarray,
-                            ratings: np.ndarray,
-                            batch_size: int) -> \
+def sample_batch(user_ids: np.ndarray,
+                 movie_ids: np.ndarray,
+                 ratings: np.ndarray,
+                 batch_size: int) -> \
         Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """[summary]
 
@@ -23,26 +23,6 @@ def sample_users_and_movies(user_ids: np.ndarray,
     batch_ratings = ratings[batch_idx]
 
     return batch_user_ids, batch_movie_ids, batch_ratings
-
-
-@tf.function
-def regularizer_loss(weights: List[tf.Tensor], alpha=0.01) -> float:
-    """[summary]
-
-    Arguments:
-        weights {List[tf.Tensor]} -- [description]
-
-    Keyword Arguments:
-        alpha {float} -- [description] (default: {0.01})
-
-    Returns:
-        float -- [description]
-    """
-    regularizer = tf.keras.regularizers.l2(l=alpha)
-    loss = 0
-    for weight in weights:
-        loss += regularizer(weight)
-    return loss
 
 
 class latent_dnn:
@@ -121,8 +101,7 @@ class latent_dnn:
             input_size=user_embed_size + movie_embed_size, output_size=1)
 
         # Variable sets
-        self.regi_vars_ = [
-            self.ratings_t1i_.weights()]
+        self.regi_vars_ = [self.ratings_t1i_.weights()]
         self.reg_vars_ = [self.ratings_t1_.weights()]
 
         self.ratings_modeli_vars_ = list(nnutils.collect_transform_vars(
@@ -160,13 +139,14 @@ class latent_dnn:
         Returns:
             np.ndarray -- [description]
         """
-        user_embed = tf.transpose(a=tf.nn.embedding_lookup(
-            params=self.user_embed_table_, ids=user_ids))
-        movie_embed = tf.transpose(a=tf.nn.embedding_lookup(
-            params=self.movie_embed_table_, ids=movie_ids))
+        user_embed = tf.nn.embedding_lookup(
+            params=self.user_embed_table_, ids=user_ids)
+        movie_embed = tf.nn.embedding_lookup(
+            params=self.movie_embed_table_, ids=movie_ids)
 
-        concat_features = tf.concat(values=[user_embed, movie_embed], axis=0)
+        concat_features = tf.concat(values=[user_embed, movie_embed], axis=1)
         concat_features = tf.nn.dropout(x=concat_features, rate=drop_prob)
+        concat_features = tf.transpose(a=concat_features)
 
         preds = None
         if self.indirect_cause_:
@@ -210,10 +190,10 @@ class latent_dnn:
                 num_iters_for_curr_task = 0
 
             batch_user_ids, batch_movie_ids, batch_ratings = \
-                sample_users_and_movies(user_ids=user_ids,
-                                        movie_ids=movie_ids,
-                                        ratings=ratings,
-                                        batch_size=self.batch_size_)
+                sample_batch(user_ids=user_ids,
+                             movie_ids=movie_ids,
+                             ratings=ratings,
+                             batch_size=self.batch_size_)
 
             if curr_task == "embed_rating":
                 with tf.GradientTape() as tape:
@@ -240,7 +220,7 @@ class latent_dnn:
                         user_ids=batch_user_ids, movie_ids=batch_movie_ids, drop_prob=0.3)
                     l_ratings = tf.metrics.mean_squared_error(
                         y_true=batch_ratings, y_pred=ratings_hat)
-                    l_reg = regularizer_loss(
+                    l_reg = nnutils.regularizer_loss(
                         weights=self.regi_vars_ if self.indirect_cause_
                         else self.reg_vars_, alpha=0.01)
 
