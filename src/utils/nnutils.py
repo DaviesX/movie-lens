@@ -1,4 +1,5 @@
 from typing import List, Dict
+from math import sqrt
 import numpy as np
 import tensorflow as tf
 
@@ -12,7 +13,8 @@ class transform:
             output_size {[type]} -- [description]
         """
         self.weights_ = tf.Variable(
-            initial_value=tf.random.truncated_normal(shape=(output_size, input_size)))
+            initial_value=tf.random.truncated_normal(shape=(output_size, input_size),
+                                                     stddev=1/sqrt(float(input_size))))
         self.biases_ = tf.Variable(
             initial_value=tf.zeros(shape=(output_size, 1)))
 
@@ -52,6 +54,26 @@ class transform:
             tf.Tensor -- [description]
         """
         return self.biases_
+
+
+@tf.function
+def regularizer_loss(weights: List[tf.Tensor], alpha=0.01) -> float:
+    """[summary]
+
+    Arguments:
+        weights {List[tf.Tensor]} -- [description]
+
+    Keyword Arguments:
+        alpha {float} -- [description] (default: {0.01})
+
+    Returns:
+        float -- [description]
+    """
+    regularizer = tf.keras.regularizers.l2(l=alpha)
+    loss = 0
+    for weight in weights:
+        loss += regularizer(weight)
+    return loss
 
 
 def collect_transform_vars(transforms: List[transform]) -> Dict[str, tf.Tensor]:
