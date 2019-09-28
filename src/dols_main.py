@@ -3,7 +3,7 @@ from data import dataset
 from latent import latent_truncated_svd as ltsvd
 from latent import latent_dnn as ldnn
 from completion import dnn_on_latent_space as dols
-from eval import eval_mse
+from eval import eval_rmse
 
 from hparams import MOVIE_EMBEDDINGS_SIZE
 from hparams import USER_EMBEDDINGS_SIZE
@@ -79,7 +79,6 @@ def main(training_mode: bool):
                   ratings=um_train.data)
 
     user_embed, movie_embed = model.export_embeddings()
-    print(movie_embed.shape)
     dataset.save_dense_array(
         file="../data/latent_dnn_user.npz", arr=user_embed)
     dataset.save_dense_array(
@@ -96,22 +95,21 @@ def main(training_mode: bool):
         file="../data/ldnn_preds_valid.npz", arr=pred_ratings_valid)
 
     # Evaluate by the MSE objective over the embeddings.
-    print("train_mse=", eval_mse.mse(um_train.data, pred_ratings_train))
-    print("valid_mse=", eval_mse.mse(um_valid.data, pred_ratings_valid))
-
+    print("train_rmse=", eval_rmse.rmse(um_train.data, pred_ratings_train))
+    print("valid_rmse=", eval_rmse.rmse(um_valid.data, pred_ratings_valid))
+ 
     # Train a missing-value completion model over the latent vectors.
     model = dols.dnn_on_latent_space(
         model_meta_path="../meta/dols.ckpt",
         user_embed_size=USER_EMBEDDINGS_SIZE,
         movie_embed_size=MOVIE_EMBEDDINGS_SIZE,
-        embedding_transform=False,
         reset_and_train=True,
-        num_iters=100000)
+        num_iters=200000)
 
     if training_mode:
         model.fit(user_embed=user_embed[um_train.row],
                   movie_embed=movie_embed[um_train.col],
-                  rating=um_train.data)
+                  ratings=um_train.data)
 
     pred_ratings_train = model.predict(user_embed=user_embed[um_train.row],
                                        movie_embed=movie_embed[um_train.col])
@@ -125,8 +123,8 @@ def main(training_mode: bool):
 
     # Evaluate the performance of the missing-value completion model on the
     # MSE objective.
-    print("train_mse=", eval_mse.mse(um_train.data, pred_ratings_train))
-    print("valid_mse=", eval_mse.mse(um_valid.data, pred_ratings_valid))
+    print("train_rmse=", eval_rmse.rmse(um_train.data, pred_ratings_train))
+    print("valid_rmse=", eval_rmse.rmse(um_valid.data, pred_ratings_valid))
 
 
 if __name__ == "__main__":

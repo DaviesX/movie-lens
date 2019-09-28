@@ -1,6 +1,6 @@
 import numpy as np
 
-def mse(y: np.ndarray, y_pred: np.ndarray) -> float:
+def rmse(y: np.ndarray, y_pred: np.ndarray) -> float:
     """Compute the mse loss.
 
     Arguments:
@@ -11,4 +11,4 @@ def mse(y: np.ndarray, y_pred: np.ndarray) -> float:
         float -- MSE value.
     """
     d = (y_pred - y)
-    return np.mean(d*d)
+    return np.sqrt(np.mean(d*d))

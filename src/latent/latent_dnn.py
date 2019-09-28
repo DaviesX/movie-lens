@@ -1,5 +1,4 @@
 from typing import Tuple, List
-
 import numpy as np
 import tensorflow as tf
 
@@ -27,14 +26,14 @@ def sample_users_and_movies(user_ids: np.ndarray,
 
 
 @tf.function
-def regularizer_loss(weights: List[tf.Tensor], alpha=0.04) -> float:
+def regularizer_loss(weights: List[tf.Tensor], alpha=0.01) -> float:
     """[summary]
 
     Arguments:
         weights {List[tf.Tensor]} -- [description]
 
     Keyword Arguments:
-        alpha {float} -- [description] (default: {0.04})
+        alpha {float} -- [description] (default: {0.01})
 
     Returns:
         float -- [description]
@@ -58,7 +57,7 @@ class latent_dnn:
                  indirect_cause: bool,
                  reset_and_train: bool,
                  num_iters=10000,
-                 batch_size=200,
+                 batch_size=400,
                  learning_rate=0.001):
         """Construct latent spaces for both user and movie by using rating
         prediction as the training task.
@@ -123,7 +122,7 @@ class latent_dnn:
 
         # Variable sets
         self.regi_vars_ = [
-            self.ratings_t1i_.weights(), self.ratings_t2i_.weights()]
+            self.ratings_t1i_.weights()]
         self.reg_vars_ = [self.ratings_t1_.weights()]
 
         self.ratings_modeli_vars_ = list(nnutils.collect_transform_vars(
@@ -166,8 +165,7 @@ class latent_dnn:
         movie_embed = tf.transpose(a=tf.nn.embedding_lookup(
             params=self.movie_embed_table_, ids=movie_ids))
 
-        concat_features = tf.concat(values=[user_embed, movie_embed],
-                                    axis=0, name="concat_features")
+        concat_features = tf.concat(values=[user_embed, movie_embed], axis=0)
         concat_features = tf.nn.dropout(x=concat_features, rate=drop_prob)
 
         preds = None
@@ -220,7 +218,7 @@ class latent_dnn:
             if curr_task == "embed_rating":
                 with tf.GradientTape() as tape:
                     ratings_hat = self.predict_ratings(
-                        user_ids=batch_user_ids, movie_ids=batch_movie_ids, drop_prob=0.3)
+                        user_ids=batch_user_ids, movie_ids=batch_movie_ids, drop_prob=0)
                     l_ratings = tf.metrics.mean_squared_error(
                         y_true=batch_ratings, y_pred=ratings_hat)
                     loss = l_ratings
@@ -228,8 +226,8 @@ class latent_dnn:
                     if i % 100 == 0:
                         print("Epoch", round(i*self.batch_size_/ratings.shape[0], 3),
                               "|task=embed_rating",
-                              "|l_ratings=", l_ratings,
-                              "|loss=", loss)
+                              "|l_ratings=", float(l_ratings),
+                              "|loss=", float(loss))
 
                     task_vars = [self.user_embed_table_,
                                  self.movie_embed_table_]
@@ -244,16 +242,16 @@ class latent_dnn:
                         y_true=batch_ratings, y_pred=ratings_hat)
                     l_reg = regularizer_loss(
                         weights=self.regi_vars_ if self.indirect_cause_
-                        else self.reg_vars_, alpha=0.1)
+                        else self.reg_vars_, alpha=0.01)
 
                     loss = l_ratings + l_reg
 
                     if i % 100 == 0:
                         print("Epoch", round(i*self.batch_size_/ratings.shape[0], 3),
                               "|task=rating_pred",
-                              "|l_ratings=", l_ratings,
-                              "|l_reg=", l_reg,
-                              "|loss=", loss)
+                              "|l_ratings=", float(l_ratings),
+                              "|l_reg=", float(l_reg),
+                              "|loss=", float(loss))
 
                     task_vars = self.ratings_modeli_vars_ if self.indirect_cause_ \
                         else self.ratings_model_vars_
@@ -275,4 +273,4 @@ class latent_dnn:
             Tuple[np.ndarray, np.ndarray] -- A tuple of user embeddings and
                 movie embeddings
         """
-        return self.user_embed_table_, self.movie_embed_table_
+        return self.user_embed_table_.numpy(), self.movie_embed_table_.numpy()
