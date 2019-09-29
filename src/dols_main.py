@@ -63,10 +63,10 @@ def main(training_mode: bool):
 
     num_user_clusters = gmm.search_optimal_cluster_size(
         data_set_name="user_embeddings",
-        data_points=user_embed, start=1, stop=20)
+        data_points=user_embed, start=1, stop=30)
     num_movie_clusters = gmm.search_optimal_cluster_size(
         data_set_name="movie_embeddings",
-        data_points=movie_embed, start=1, stop=20)
+        data_points=movie_embed, start=1, stop=30)
 
     # Fine tune the latent space by using the latent_dnn model.
     num_users = row2uid.shape[0]

@@ -36,7 +36,7 @@ def search_optimal_cluster_size(data_set_name: str,
         gmm = BayesianGaussianMixture(n_components=i,
                                       covariance_type="diag",
                                       tol=1e-2,
-                                      n_init=3)
+                                      n_init=5)
         gmm.fit(X=data_points)
         if not gmm.converged_:
             continue
@@ -52,14 +52,14 @@ def search_optimal_cluster_size(data_set_name: str,
 
 
 class gmm_likelihood:
-    def __init__(self, num_clusters: int, max_data_points=10000):
+    def __init__(self, num_clusters: int, max_data_points=20000):
         """[summary]
 
         Arguments:
             num_clusters {int} -- [description]
 
         Keyword Arguments:
-            max_data_points {int} -- [description] (default: {10000})
+            max_data_points {int} -- [description] (default: {20000})
         """
         self.num_clusters_ = num_clusters
         self.max_data_points_ = max_data_points

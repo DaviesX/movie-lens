@@ -192,6 +192,8 @@ class latent_dnn:
         curr_task = "rating_pred"
         num_iters_for_curr_task = 0
         for i in range(self.num_iters_):
+            progress = (i + 1.0)/self.num_iters_
+
             if num_iters_for_curr_task > 1000 and curr_task == "embed_tune":
                 curr_task = "rating_pred"
                 num_iters_for_curr_task = 0
@@ -206,7 +208,7 @@ class latent_dnn:
                              batch_size=self.batch_size_)
 
             if curr_task == "embed_tune":
-                if num_iters_for_curr_task == 0:
+                if num_iters_for_curr_task == 0 and progress > 0.15:
                     print("Finding MLE for user GMM...")
                     self.user_gmm_.mle(x=self.user_embed_table_.numpy())
 
@@ -217,18 +219,24 @@ class latent_dnn:
                         user_ids=batch_user_ids, movie_ids=batch_movie_ids, drop_prob=0.1)
                     l_ratings = tf.metrics.mean_squared_error(
                         y_true=batch_ratings, y_pred=ratings_hat)
-                    l_user_gmm = -self.user_gmm_.likelihood_score(x=user_embed)
-                    l_movie_gmm = - \
-                        self.movie_gmm_.likelihood_score(x=movie_embed)
+                    if progress > 0.2:
+                        l_user_gmm = - \
+                            self.user_gmm_.likelihood_score(x=user_embed)
+                        l_movie_gmm = - \
+                            self.movie_gmm_.likelihood_score(x=movie_embed)
+                    else:
+                        l_user_gmm = 0
+                        l_movie_gmm = 0
                     loss = l_ratings + 0.1*l_user_gmm + 0.1*l_movie_gmm
 
                     if i % 100 == 0:
-                        print("Epoch", round(i*self.batch_size_/ratings.shape[0], 3),
+                        print("Epoch", round(i*self.batch_size_/ratings.shape[0], 1),
+                              "|p=", int(progress*100), "%",
                               "|task=embed_tune",
-                              "|l_ratings=", float(l_ratings),
-                              "|l_user_gmm=", float(l_user_gmm),
-                              "|l_movie_gmm=", float(l_movie_gmm),
-                              "|loss=", float(loss))
+                              "|l_ratings=", round(float(l_ratings), 2),
+                              "|l_user_gmm=", round(float(l_user_gmm), 2),
+                              "|l_movie_gmm=", round(float(l_movie_gmm), 2),
+                              "|loss=", round(float(loss), 2))
 
                     task_vars = [self.user_embed_table_,
                                  self.movie_embed_table_]
@@ -248,11 +256,12 @@ class latent_dnn:
                     loss = l_ratings + l_reg
 
                     if i % 100 == 0:
-                        print("Epoch", round(i*self.batch_size_/ratings.shape[0], 3),
+                        print("Epoch", round(i*self.batch_size_/ratings.shape[0], 1),
+                              "|p=", int(progress*100), "%",
                               "|task=rating_pred",
-                              "|l_ratings=", float(l_ratings),
-                              "|l_reg=", float(l_reg),
-                              "|loss=", float(loss))
+                              "|l_ratings=", round(float(l_ratings), 2),
+                              "|l_reg=", round(float(l_reg), 2),
+                              "|loss=", round(float(loss), 2))
 
                     task_vars = self.ratings_modeli_vars_ if self.indirect_cause_ \
                         else self.ratings_model_vars_

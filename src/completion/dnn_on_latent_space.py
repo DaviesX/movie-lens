@@ -134,6 +134,8 @@ class dnn_on_latent_space:
         optimizer = tf.optimizers.Adamax(learning_rate=self.learning_rate_)
 
         for i in range(self.num_iters_):
+            progress = (i + 1.0)/self.num_iters_
+
             batch_user_embed, batch_movie_embed, batch_ratings = \
                 sample_batch(user_embed=user_embed,
                              movie_embed=movie_embed,
@@ -150,10 +152,11 @@ class dnn_on_latent_space:
                 loss = l_ratings
 
                 if i % 1000 == 0:
-                    print("Epoch", round(i*self.batch_size_/ratings.shape[0], 3),
-                          "|l_ratings=", float(l_ratings),
-                          "|l_reg=", float(l_reg),
-                          "|loss=", float(loss))
+                    print("Epoch", round(i*self.batch_size_/ratings.shape[0], 1),
+                          "|p=", int(progress*100), "%",
+                          "|l_ratings=", round(float(l_ratings), 2),
+                          "|l_reg=", round(float(l_reg), 2),
+                          "|loss=", round(float(loss), 2))
 
                 grads = tape.gradient(target=loss, sources=self.modeli_vars_)
                 optimizer.apply_gradients(
