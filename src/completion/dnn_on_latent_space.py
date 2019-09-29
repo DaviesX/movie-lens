@@ -149,7 +149,6 @@ class dnn_on_latent_space:
                     y_true=batch_ratings, y_pred=ratings_hat)
                 l_reg = nnutils.regularizer_loss(weights=self.regi_vars_)
                 loss = l_ratings + l_reg
-                loss = l_ratings
 
                 if i % 1000 == 0:
                     print("Epoch", round(i*self.batch_size_/ratings.shape[0], 1),
