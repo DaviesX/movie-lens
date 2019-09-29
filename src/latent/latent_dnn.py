@@ -3,6 +3,7 @@ import numpy as np
 import tensorflow as tf
 
 from utils import nnutils
+from latent import gmm
 
 
 def sample_batch(user_ids: np.ndarray,
@@ -30,6 +31,8 @@ class latent_dnn:
                  model_meta_path: str,
                  num_users: int,
                  num_movies: int,
+                 num_user_clusters: int,
+                 num_movie_clusters: int,
                  user_embed_size: int,
                  movie_embed_size: int,
                  init_user_embed_table: np.ndarray,
@@ -47,6 +50,10 @@ class latent_dnn:
                 are stored/going to be stored.
             num_users {int} -- The total number of unique users.
             num_movies {int} -- The total number of unique movies.
+            num_user_clusters {int} -- Suggested number of gaussian user
+                clusters.
+            num_movie_clusters {int} -- Suggested number of gaussian movie
+                clusters.
             user_embed_size {int} -- The size of user embeddings vector to
                 be generated.
             movie_embed_size {int} -- The size of movie embeddings vector
@@ -99,6 +106,9 @@ class latent_dnn:
             user_embed_size + movie_embed_size)//2, output_size=1)
         self.ratings_t1_ = nnutils.transform(
             input_size=user_embed_size + movie_embed_size, output_size=1)
+
+        self.user_gmm_ = gmm.gmm_likelihood(num_clusters=num_user_clusters)
+        self.movie_gmm_ = gmm.gmm_likelihood(num_clusters=num_movie_clusters)
 
         # Variable sets
         self.regi_vars_ = [self.ratings_t1i_.weights()]
@@ -157,7 +167,7 @@ class latent_dnn:
             preds = 2.5 * \
                 (self.ratings_t1_(x=concat_features, act_fn="tanh") + 1)
 
-        return preds[0, :]
+        return preds[0, :], user_embed, movie_embed
 
     def fit(self,
             user_ids: np.ndarray,
@@ -182,11 +192,11 @@ class latent_dnn:
         curr_task = "rating_pred"
         num_iters_for_curr_task = 0
         for i in range(self.num_iters_):
-            if num_iters_for_curr_task > 1000 and curr_task == "embed_rating":
+            if num_iters_for_curr_task > 1000 and curr_task == "embed_tune":
                 curr_task = "rating_pred"
                 num_iters_for_curr_task = 0
             if num_iters_for_curr_task > 1000 and curr_task == "rating_pred":
-                curr_task = "embed_rating"
+                curr_task = "embed_tune"
                 num_iters_for_curr_task = 0
 
             batch_user_ids, batch_movie_ids, batch_ratings = \
@@ -195,18 +205,29 @@ class latent_dnn:
                              ratings=ratings,
                              batch_size=self.batch_size_)
 
-            if curr_task == "embed_rating":
+            if curr_task == "embed_tune":
+                if num_iters_for_curr_task == 0:
+                    print("Finding MLE for user GMM...")
+                    self.user_gmm_.mle(x=self.user_embed_table_.numpy())
+
+                    print("Finding MLE for movie GMM...")
+                    self.movie_gmm_.mle(x=self.movie_embed_table_.numpy())
                 with tf.GradientTape() as tape:
-                    ratings_hat = self.predict_ratings(
-                        user_ids=batch_user_ids, movie_ids=batch_movie_ids, drop_prob=0.3)
+                    ratings_hat, user_embed, movie_embed = self.predict_ratings(
+                        user_ids=batch_user_ids, movie_ids=batch_movie_ids, drop_prob=0.1)
                     l_ratings = tf.metrics.mean_squared_error(
                         y_true=batch_ratings, y_pred=ratings_hat)
-                    loss = l_ratings
+                    l_user_gmm = -self.user_gmm_.likelihood_score(x=user_embed)
+                    l_movie_gmm = - \
+                        self.movie_gmm_.likelihood_score(x=movie_embed)
+                    loss = l_ratings + 0.1*l_user_gmm + 0.1*l_movie_gmm
 
                     if i % 100 == 0:
                         print("Epoch", round(i*self.batch_size_/ratings.shape[0], 3),
-                              "|task=embed_rating",
+                              "|task=embed_tune",
                               "|l_ratings=", float(l_ratings),
+                              "|l_user_gmm=", float(l_user_gmm),
+                              "|l_movie_gmm=", float(l_movie_gmm),
                               "|loss=", float(loss))
 
                     task_vars = [self.user_embed_table_,
@@ -216,7 +237,7 @@ class latent_dnn:
                         grads_and_vars=zip(grads, task_vars))
             elif curr_task == "rating_pred":
                 with tf.GradientTape() as tape:
-                    ratings_hat = self.predict_ratings(
+                    ratings_hat, _, _ = self.predict_ratings(
                         user_ids=batch_user_ids, movie_ids=batch_movie_ids, drop_prob=0.3)
                     l_ratings = tf.metrics.mean_squared_error(
                         y_true=batch_ratings, y_pred=ratings_hat)

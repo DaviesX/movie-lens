@@ -2,6 +2,7 @@ import numpy as np
 from data import dataset
 from latent import latent_truncated_svd as ltsvd
 from latent import latent_dnn as ldnn
+from latent import gmm
 from completion import dnn_on_latent_space as dols
 from eval import eval_rmse
 
@@ -60,18 +61,27 @@ def main(training_mode: bool):
     dataset.save_dense_array(file="../data/latent_tsvd_user_valid.npz",
                              arr=user_embed_valid)
 
+    num_user_clusters = gmm.search_optimal_cluster_size(
+        data_set_name="user_embeddings",
+        data_points=user_embed, start=1, stop=20)
+    num_movie_clusters = gmm.search_optimal_cluster_size(
+        data_set_name="movie_embeddings",
+        data_points=movie_embed, start=1, stop=20)
+
     # Fine tune the latent space by using the latent_dnn model.
     num_users = row2uid.shape[0]
     num_movies = col2mid.shape[0]
     model = ldnn.latent_dnn(model_meta_path="../meta/latent_dnn.ckpt",
                             num_users=num_users,
                             num_movies=num_movies,
+                            num_user_clusters=num_user_clusters,
+                            num_movie_clusters=num_movie_clusters,
                             user_embed_size=USER_EMBEDDINGS_SIZE,
                             movie_embed_size=MOVIE_EMBEDDINGS_SIZE,
                             init_user_embed_table=user_embed,
                             init_movie_embed_table=movie_embed,
                             indirect_cause=True,
-                            num_iters=50000,
+                            num_iters=100000,
                             reset_and_train=True)
     if training_mode:
         model.fit(user_ids=um_train.row,
@@ -84,10 +94,10 @@ def main(training_mode: bool):
     dataset.save_dense_array(
         file="../data/latent_dnn_movie.npz", arr=movie_embed)
 
-    pred_ratings_train = model.predict_ratings(user_ids=um_train.row,
-                                               movie_ids=um_train.col)
-    pred_ratings_valid = model.predict_ratings(user_ids=um_valid.row,
-                                               movie_ids=um_valid.col)
+    pred_ratings_train, _, _ = model.predict_ratings(user_ids=um_train.row,
+                                                     movie_ids=um_train.col)
+    pred_ratings_valid, _, _ = model.predict_ratings(user_ids=um_valid.row,
+                                                     movie_ids=um_valid.col)
 
     dataset.save_dense_array(
         file="../data/ldnn_preds_train.npz", arr=pred_ratings_train)
@@ -104,7 +114,7 @@ def main(training_mode: bool):
         user_embed_size=USER_EMBEDDINGS_SIZE,
         movie_embed_size=MOVIE_EMBEDDINGS_SIZE,
         reset_and_train=True,
-        num_iters=50000)
+        num_iters=100000)
 
     if training_mode:
         model.fit(user_embed=user_embed[um_train.row],
