@@ -132,22 +132,18 @@ class latent_dnn:
             status.assert_consumed()
 
     @tf.function
-    def predict_ratings(self,
-                        user_ids: np.ndarray,
-                        movie_ids: np.ndarray,
-                        drop_prob=0.0) -> np.ndarray:
+    def predict_ratings_(self,
+                         user_ids: np.ndarray,
+                         movie_ids: np.ndarray,
+                         drop_prob=0.0) -> np.ndarray:
         """Predict the rating value of each (user_id, movie_id) pair.
-
-        Arguments:
-            user_ids {np.ndarray} -- [description]
-            movie_ids {np.ndarray} -- [description]
 
         Keyword Arguments:
             drop_prob {float} -- The rating of dropping out perceptron units.
                 (default: {0.0})
 
         Returns:
-            np.ndarray -- [description]
+            np.ndarray -- rating predictions.
         """
         user_embed = tf.nn.embedding_lookup(
             params=self.user_embed_table_, ids=user_ids)
@@ -168,6 +164,24 @@ class latent_dnn:
                 (self.ratings_t1_(x=concat_features, act_fn="tanh") + 1)
 
         return preds[0, :], user_embed, movie_embed
+
+    def predict_ratings(self,
+                        user_ids: np.ndarray,
+                        movie_ids: np.ndarray) -> np.ndarray:
+        """Same as predict_ratings_() but performed in batch mode.
+
+        Returns:
+            np.ndarray -- rating predictions.
+        """
+        num_records = user_ids.shape[0]
+        preds = np.zeros(shape=(num_records))
+        for i in range(0, num_records, self.batch_size_):
+            begin = i
+            end = i + self.batch_size_
+            preds[begin:end], _, _ = self.predict_ratings_(user_ids=user_ids[begin:end],
+                                                           movie_ids=movie_ids[begin:end],
+                                                           drop_prob=0.0)
+        return preds
 
     def fit(self,
             user_ids: np.ndarray,
@@ -215,7 +229,7 @@ class latent_dnn:
                     print("Finding MLE for movie GMM...")
                     self.movie_gmm_.mle(x=self.movie_embed_table_.numpy())
                 with tf.GradientTape() as tape:
-                    ratings_hat, user_embed, movie_embed = self.predict_ratings(
+                    ratings_hat, user_embed, movie_embed = self.predict_ratings_(
                         user_ids=batch_user_ids, movie_ids=batch_movie_ids, drop_prob=0.1)
                     l_ratings = tf.metrics.mean_squared_error(
                         y_true=batch_ratings, y_pred=ratings_hat)
@@ -245,7 +259,7 @@ class latent_dnn:
                         grads_and_vars=zip(grads, task_vars))
             elif curr_task == "rating_pred":
                 with tf.GradientTape() as tape:
-                    ratings_hat, _, _ = self.predict_ratings(
+                    ratings_hat, _, _ = self.predict_ratings_(
                         user_ids=batch_user_ids, movie_ids=batch_movie_ids, drop_prob=0.3)
                     l_ratings = tf.metrics.mean_squared_error(
                         y_true=batch_ratings, y_pred=ratings_hat)

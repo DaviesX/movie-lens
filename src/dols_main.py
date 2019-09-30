@@ -15,7 +15,7 @@ def main(training_mode: bool):
 
     # Generate raw rating datasets.
     um, row2uid, col2mid = dataset.load_user_movie_rating(
-        file_name="../movie-lens-small-latest-dataset/ratings.csv")
+        file_name="../ml-20m/ratings.csv")
     um, row2uid, col2mid = dataset.truncate_unrated_movies(
         um=um, row2uid=row2uid, col2mid=col2mid)
     um_train, um_valid = dataset.train_and_validation_split(
@@ -81,6 +81,7 @@ def main(training_mode: bool):
                             init_user_embed_table=user_embed,
                             init_movie_embed_table=movie_embed,
                             indirect_cause=True,
+                            batch_size=5000,
                             num_iters=100000,
                             reset_and_train=True)
     if training_mode:
@@ -94,10 +95,10 @@ def main(training_mode: bool):
     dataset.save_dense_array(
         file="../data/latent_dnn_movie.npz", arr=movie_embed)
 
-    pred_ratings_train, _, _ = model.predict_ratings(user_ids=um_train.row,
-                                                     movie_ids=um_train.col)
-    pred_ratings_valid, _, _ = model.predict_ratings(user_ids=um_valid.row,
-                                                     movie_ids=um_valid.col)
+    pred_ratings_train = model.predict_ratings(user_ids=um_train.row,
+                                               movie_ids=um_train.col)
+    pred_ratings_valid = model.predict_ratings(user_ids=um_valid.row,
+                                               movie_ids=um_valid.col)
 
     dataset.save_dense_array(
         file="../data/ldnn_preds_train.npz", arr=pred_ratings_train)
@@ -109,22 +110,22 @@ def main(training_mode: bool):
     print("valid_rmse=", eval_rmse.rmse(um_valid.data, pred_ratings_valid))
 
     # Train a missing-value completion model over the latent vectors.
-    model = dols.dnn_on_latent_space(
-        model_meta_path="../meta/dols.ckpt",
-        user_embed_size=USER_EMBEDDINGS_SIZE,
-        movie_embed_size=MOVIE_EMBEDDINGS_SIZE,
-        reset_and_train=True,
-        num_iters=100000)
+    model = dols.dnn_on_latent_space(model_meta_path="../meta/dols.ckpt",
+                                     user_embed_table=user_embed,
+                                     movie_embed_table=movie_embed,
+                                     reset_and_train=True,
+                                     batch_size=5000,
+                                     num_iters=100000)
 
     if training_mode:
-        model.fit(user_embed=user_embed[um_train.row],
-                  movie_embed=movie_embed[um_train.col],
+        model.fit(user_ids=um_train.row,
+                  movie_ids=um_train.col,
                   ratings=um_train.data)
 
-    pred_ratings_train = model.predict(user_embed=user_embed[um_train.row],
-                                       movie_embed=movie_embed[um_train.col])
-    pred_ratings_valid = model.predict(user_embed=user_embed[um_valid.row],
-                                       movie_embed=movie_embed[um_valid.col])
+    pred_ratings_train = model.predict(user_ids=um_train.row,
+                                       movie_ids=um_train.col)
+    pred_ratings_valid = model.predict(user_ids=um_valid.row,
+                                       movie_ids=um_valid.col)
 
     dataset.save_dense_array(
         file="../data/dols_preds_train.npz", arr=pred_ratings_train)
