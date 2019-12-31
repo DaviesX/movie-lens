@@ -1,0 +1,157 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+link <- read.csv("/Users/junma/Desktop/movie-lens/movie-lens-small-latest-dataset/links.csv", TRUE)
+movies <- read.csv("/Users/junma/Desktop/movie-lens/movie-lens-small-latest-dataset/movies.csv", TRUE)
+ratings <- read.csv("/Users/junma/Desktop/movie-lens/movie-lens-small-latest-dataset/ratings.csv", TRUE)
+```
+
+*rating distribution
+```{r}
+hist(ratings$rating, breaks = 10)
+mean(ratings$rating)
+```
+
+```{r}
+ratings
+library(Matrix)
+M <- sparseMatrix(i = ratings$userId, j = ratings$movieId, x = ratings$rating)
+M
+k
+ncol(M)
+c <- 1:ncol(M)
+M.k <- rbind(M,c)
+nrow(M)
+M[rowSums(M)>0,]
+library(tidyverse)
+#checking if any user does not rate a movie
+rowSums(M)>0
+as_tibble(M)
+as_tibble(M)
+#checking if any movie does not have a rating
+colSums(M)>0
+
+#deleting those movies without rating
+M.new <-M.k[,colSums(M)>0]
+M<-M[,colSums(M)>0]
+kk<-M.new[611,]
+```
+
+```{r}
+hist(rowSums(M[,] != 0))
+summary(rowSums(M[,] != 0))
+hist(colSums(M[,] != 0))
+summary(colSums(M[,] != 0))
+```
+
+```{r}
+#Setting up the dataset
+library(rARPACK)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+cor(ratings)
+
+#user new 10 location
+svds(M.new,k=10)
+User.svds <- svds(M.new,k=10)$u
+User.svds<-as_tibble(User.svds)%>% mutate(id = 1:nrow(User.svds))
+
+ratings.new <- as_tibble(ratings)
+names(ratings.new)[1] <- "id"
+ratings.new <- ratings.new %>% left_join(User.svds, by="id")
+ratings.new
+
+
+
+#movie new 10 location
+M.newtran <- t(M.new)
+Movies.svds <- svds(M.newtran, k=10)$u
+Movies.svds<-as_tibble(Movies.svds)%>% mutate(movieId = kk)
+Movies.svds
+ratings.new
+
+#newdataset
+ratings.new <- ratings.new %>% left_join(Movies.svds, by="movieId") #%>% select(-movieId, -id)
+ratings.new <- ratings.new %>% mutate(X1=1:nrow(ratings.new ))
+ratings.new
+
+
+
+#data split
+training.data<- ratings.new %>% sample_frac(0.80) %>% mutate(split="train")
+testing.data <- ratings.new %>% anti_join(training.data, by="X1") %>% mutate(split="test")
+all_data <- bind_rows(training.data, testing.data)
+all_data %>%group_by(X1)%>%summarise(value=n())
+n.train <- nrow(training.data)
+n.train 
+n.test <- nrow(testing.data)
+n.test
+training.data
+
+
+training.data
+#fit a linear model
+colnames(ratings.new)
+formula(lm(rating~.,data=ratings.new))
+model.1 <- lm(rating ~V1.x+ V2.x + V3.x + V4.x + V5.x + V6.x + V7.x + V8.x + 
+    V9.x + V10.x + V1.y + V2.y + V3.y + V4.y + V5.y + V6.y + 
+    V7.y + V8.y + V9.y + V10.y, data=training.data)
+summary(model.1)
+cor(ratings.new)
+#checking normality
+hist(rstudent(model.1),main="Histogram",ylab="Studentized Deleted")
+
+#checking constant 
+plot(predict(model.1),rstudent(model.1),main="Residual Plot",xlab="Y-hat",ylab="Studentized Deleted")
+abline(h=0,lty=2)
+lines(supsmu(predict(model.1),rstudent(model.1)),col=2)
+
+sum(is.na(ratings.new))
+ratings.new
+
+#
+durbinWatsonTest(model.1)
+
+#MSPE
+pred.MLR <- predict(model.1,testing.data)
+MSPE <- sum((testing.data$rating- pred.MLR)^2)/n.test
+MSPE
+
+testing.data
+sum(is.na(ratings.new$rating))
+sum(is.na(training.data$rating))
+sum(is.na(testing.data$V7.y))
+sum(is.na(pred.MLR))
+
+
+# Compute training MSE
+MSE.MLR <- sum(residuals(model.1)^2)/n.train
+MSE.MLR
+```
+
+```{r}
+#lasso
+library(leaps)
+library(bestglm)
+
+predictors=cbind(training.data$V1.x, training.data$V2.x,training.data$V3.x,training.data$V4.x,training.data$V5.x,training.data$V6.x,training.data$V7.x,training.data$V8.x,training.data$V9.x,training.data$V10.x,training.data$V1.y, training.data$V2.y,training.data$V3.y,training.data$V4.y,training.data$V5.y,training.data$V6.y,training.data$V7.y,training.data$V8.y,training.data$V9.y,training.data$V10.y)
+
+
+
+```
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
